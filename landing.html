@@ -71,12 +71,27 @@
             height: auto;
             z-index: -1;
             opacity: 0.92;
-            filter: drop-shadow(0 0 40px rgba(224, 181, 106, 0.25));
+            filter: drop-shadow(0 0 40px rgba(224, 181, 106, 0.22));
             animation: beacon-sway 9s ease-in-out infinite alternate;
         }
-        .hero-beacon .lamp {
-            animation: lamp-pulse 3.8s ease-in-out infinite;
+        .hero-beacon .chamber-glow {
+            animation: chamber-breathe 5.5s ease-in-out infinite;
+        }
+        .hero-beacon .resident {
+            transform-box: fill-box;
             transform-origin: center;
+        }
+        .hero-beacon .resident-a {
+            animation: mingle-a 7.5s ease-in-out infinite;
+        }
+        .hero-beacon .resident-b {
+            animation: mingle-b 9.2s ease-in-out infinite;
+        }
+        .hero-beacon .resident-c {
+            animation: mingle-c 8.1s ease-in-out infinite;
+        }
+        .hero-beacon .resident-d {
+            animation: mingle-d 10.4s ease-in-out infinite;
         }
         .hero-copy {
             max-width: 34rem;
@@ -305,9 +320,29 @@
             from { transform: translateY(0) rotate(-0.6deg); }
             to { transform: translateY(-10px) rotate(0.8deg); }
         }
-        @keyframes lamp-pulse {
-            0%, 100% { opacity: 0.85; }
-            50% { opacity: 1; }
+        @keyframes chamber-breathe {
+            0%, 100% { opacity: 0.55; }
+            50% { opacity: 0.85; }
+        }
+        @keyframes mingle-a {
+            0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.95; }
+            35% { transform: translate(10px, -8px) scale(1.08); opacity: 1; }
+            70% { transform: translate(-6px, 6px) scale(0.92); opacity: 0.85; }
+        }
+        @keyframes mingle-b {
+            0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.9; }
+            40% { transform: translate(-12px, 5px) scale(1.1); opacity: 1; }
+            75% { transform: translate(7px, -10px) scale(0.9); opacity: 0.8; }
+        }
+        @keyframes mingle-c {
+            0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.88; }
+            30% { transform: translate(8px, 9px) scale(0.94); opacity: 0.95; }
+            65% { transform: translate(-9px, -7px) scale(1.12); opacity: 1; }
+        }
+        @keyframes mingle-d {
+            0%, 100% { transform: translate(0, 0) scale(0.95); opacity: 0.75; }
+            45% { transform: translate(-5px, -11px) scale(1.05); opacity: 0.95; }
+            80% { transform: translate(11px, 4px) scale(0.88); opacity: 0.7; }
         }
         @keyframes rise-in {
             from { opacity: 0; transform: translateY(18px); }
@@ -325,7 +360,11 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .hero-sky, .hero-beacon, .hero-beacon .lamp, .hero-copy {
+            .hero-sky,
+            .hero-beacon,
+            .hero-beacon .chamber-glow,
+            .hero-beacon .resident,
+            .hero-copy {
                 animation: none;
             }
         }
@@ -340,16 +379,39 @@
                     <stop stop-color="#3d5568"/>
                     <stop offset="1" stop-color="#1c2c38"/>
                 </linearGradient>
-                <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(140 78) rotate(90) scale(70 90)">
-                    <stop stop-color="#e0b56a" stop-opacity="0.9"/>
-                    <stop offset="1" stop-color="#e0b56a" stop-opacity="0"/>
+                <radialGradient id="chamberGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(140 70) rotate(90) scale(58 72)">
+                    <stop stop-color="#e8c98a" stop-opacity="0.55"/>
+                    <stop offset="1" stop-color="#e8c98a" stop-opacity="0"/>
                 </radialGradient>
+                <clipPath id="lanternRoom">
+                    <rect x="112" y="34" width="56" height="58" rx="4"/>
+                </clipPath>
+                <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="2.2" result="blur"/>
+                    <feMerge>
+                        <feMergeNode in="blur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
             </defs>
-            <ellipse cx="140" cy="78" rx="70" ry="90" fill="url(#glow)" class="lamp"/>
-            <path d="M118 52h44l8 28H110l8-28Z" fill="#d7c4a0"/>
-            <rect x="124" y="36" width="32" height="18" rx="2" fill="#e0b56a" class="lamp"/>
-            <path d="M108 80h64l14 36H94l14-36Z" fill="#2a3d4c"/>
-            <path d="M96 116h88l18 260H78L96 116Z" fill="url(#stone)"/>
+            <!-- Outer halo from the household of lights -->
+            <ellipse cx="140" cy="70" rx="68" ry="86" fill="url(#chamberGlow)" class="chamber-glow"/>
+            <!-- Lantern roof -->
+            <path d="M118 28h44l10 14H108l10-14Z" fill="#d7c4a0"/>
+            <rect x="126" y="22" width="28" height="10" rx="2" fill="#c4a574"/>
+            <!-- Glass chamber frame -->
+            <rect x="110" y="42" width="60" height="62" rx="5" fill="#1a2a36" fill-opacity="0.55" stroke="#8aa0b0" stroke-opacity="0.45" stroke-width="2"/>
+            <!-- Residents mingling in the lantern -->
+            <g clip-path="url(#lanternRoom)" filter="url(#softGlow)">
+                <circle class="resident resident-a" cx="132" cy="58" r="7.5" fill="#e0b56a"/>
+                <circle class="resident resident-b" cx="152" cy="54" r="6.2" fill="#d4a0c4"/>
+                <circle class="resident resident-c" cx="140" cy="72" r="6.8" fill="#88b5a4"/>
+                <circle class="resident resident-d" cx="158" cy="76" r="4.8" fill="#9bb0d4"/>
+            </g>
+            <!-- Gallery sill -->
+            <path d="M106 102h68l12 22H94l12-22Z" fill="#2a3d4c"/>
+            <!-- Tower -->
+            <path d="M96 124h88l18 252H78L96 124Z" fill="url(#stone)"/>
             <path d="M88 210h104" stroke="#4a6578" stroke-width="6"/>
             <path d="M84 280h112" stroke="#4a6578" stroke-width="6"/>
             <path d="M40 390h200l12 18H28l12-18Z" fill="#15232e"/>
