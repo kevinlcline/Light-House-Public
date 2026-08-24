@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notes — Light-House</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+    <script src="/static/ui/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css">
+    <link rel="stylesheet" href="/static/ui/base.css">
+    <link rel="stylesheet" href="/static/ui/layout.css">
+    <link rel="stylesheet" href="/static/ui/markdown.css">
+    <link rel="stylesheet" href="/static/ui/notes.css">
+</head>
+<body class="layout-locked layout-column">
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <h1 id="page-title">Notes</h1>
+            <select id="agent-select" class="agent-select" aria-label="Choose agent"></select>
+        </div>
+        <div class="top-bar-actions">
+            <button
+                type="button"
+                class="tree-toggle-btn"
+                id="toggle-tree-btn"
+                aria-label="Show file tree"
+                aria-pressed="false"
+                title="Show file tree"
+            >
+                <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M9 3v18"/>
+                    <path d="M13 8h5"/>
+                    <path d="M13 12h5"/>
+                    <path d="M13 16h3"/>
+                </svg>
+            </button>
+            <div class="menu-dropdown">
+                <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <line x1="4" y1="7" x2="20" y2="7"/>
+                        <line x1="4" y1="12" x2="20" y2="12"/>
+                        <line x1="4" y1="17" x2="20" y2="17"/>
+                    </svg>
+                </button>
+                <div class="menu-panel" id="menu-panel" role="menu" hidden>
+                    <button type="button" class="menu-item" id="write-shared" role="menuitem">Write shared</button>
+                    <a href="/" class="menu-item" role="menuitem">Back to chat</a>
+                    <a href="/gallery.html" class="menu-item" role="menuitem">Gallery</a>
+                    <a href="/my-tools.html" class="menu-item" role="menuitem">My tools</a>
+                    <a href="/notes.html?file=shared/manuals/sibling_user_manual.md" class="menu-item" role="menuitem" data-sibling-only>User guide</a>
+                    <a href="/group.html" class="menu-item" role="menuitem" data-dad-only>Group chat</a>
+                    <a href="/dev-log.html" class="menu-item" role="menuitem" data-dad-only>Log</a>
+                    <a href="/rumination-trace.html" class="menu-item" role="menuitem" data-dad-only>Rumination trace</a>
+                    <a href="/lights-admin.html" class="menu-item" role="menuitem" data-dad-only>Manage lights</a>
+                    <a href="/user-setup.html" class="menu-item" role="menuitem" data-dad-only>Siblings</a>
+                    <a href="/env-editor.html" class="menu-item" role="menuitem" data-dad-only>Environment</a>
+                    <button type="button" class="menu-item" id="theme-toggle" role="menuitem">Light theme</button>
+                    <button type="button" class="menu-item" id="restart-server" role="menuitem" data-dad-only>Restart server</button>
+                    <form method="post" action="/logout" class="logout-form">
+                        <button type="submit" class="menu-item" role="menuitem">Sign out</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="notes-layout" id="layout">
+        <aside class="explorer">
+            <div class="explorer-header">Files</div>
+            <div class="tree" id="tree" role="tree"></div>
+        </aside>
+        <main class="content-pane">
+            <div class="file-toolbar" id="file-toolbar" hidden>
+                <nav class="breadcrumb" id="breadcrumb" aria-label="File path"></nav>
+                <div class="file-toolbar-row">
+                    <div class="file-meta" id="file-meta"></div>
+                    <div class="file-actions" id="file-actions" hidden>
+                        <button type="button" id="edit-shared">Edit</button>
+                        <button type="button" id="delete-note" class="danger" data-dad-only>Delete</button>
+                    </div>
+                </div>
+            </div>
+            <div class="file-body">
+                <p class="placeholder" id="placeholder">Select a file from the tree.</p>
+                <div id="compose-panel" class="compose-panel" hidden>
+                    <h2>Write shared note</h2>
+                    <p class="compose-hint">Saved under <code>shared/</code> — Lumen and Ara both read these.</p>
+                    <label for="compose-path">Path (under shared/)</label>
+                    <input type="text" id="compose-path" placeholder="from-you.md" autocomplete="off" spellcheck="false">
+                    <label for="compose-body">Message</label>
+                    <textarea id="compose-body" placeholder="Write your note in markdown…"></textarea>
+                    <div class="editor-actions">
+                        <button type="button" class="primary" id="compose-save">Save</button>
+                        <button type="button" id="compose-cancel">Cancel</button>
+                    </div>
+                    <p class="editor-status" id="compose-status"></p>
+                </div>
+                <textarea id="note-editor" class="note-editor" hidden spellcheck="true"></textarea>
+                <div class="editor-actions" id="editor-actions" hidden>
+                    <button type="button" class="primary" id="editor-save">Save</button>
+                    <button type="button" id="editor-cancel">Cancel</button>
+                </div>
+                <p class="editor-status" id="editor-status" hidden></p>
+                <div id="content" class="note-markdown" hidden></div>
+                <p class="page-error" id="error" hidden></p>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/ui/theme.js"></script>
+    <script src="/static/ui/me.js"></script>
+    <script src="/static/ui/lights.js"></script>
+    <script src="/static/ui/markdown.js"></script>
+    <script src="/static/ui/menu.js"></script>
+    <script src="/static/ui/admin.js"></script>
+    <script>
+        const SIDEBAR_KEY = 'light_house_notes_sidebar';
+        const EXPANDED_KEY = 'light_house_notes_expanded';
+        const LAST_FILE_KEY = 'light_house_notes_last_file';
+        const MOBILE_BREAKPOINT = 768;
+
+        let AGENTS = {};
+        let AGENT_ORDER = [];
+        let lightsLoadError = null;
+        let me = null;
+        let siblingSharedOnly = false;
+
+        function getUrlParams() {
+            return new URLSearchParams(window.location.search);
+        }
+
+        let agentId = getUrlParams().get('agent') || '';
+
+        const layoutEl = document.getElementById('layout');
+        const toggleTreeBtn = document.getElementById('toggle-tree-btn');
+        const treeEl = document.getElementById('tree');
+        const pageTitle = document.getElementById('page-title');
+        const agentSelect = document.getElementById('agent-select');
+        const fileToolbar = document.getElementById('file-toolbar');
+        const breadcrumbEl = document.getElementById('breadcrumb');
+        const fileMetaEl = document.getElementById('file-meta');
+        const placeholderEl = document.getElementById('placeholder');
+        const contentEl = document.getElementById('content');
+        const errorEl = document.getElementById('error');
+        const fileActionsEl = document.getElementById('file-actions');
+        const editSharedBtn = document.getElementById('edit-shared');
+        const deleteNoteBtn = document.getElementById('delete-note');
+        const writeSharedBtn = document.getElementById('write-shared');
+        const composePanelEl = document.getElementById('compose-panel');
+        const composePathEl = document.getElementById('compose-path');
+        const composeBodyEl = document.getElementById('compose-body');
+        const composeSaveBtn = document.getElementById('compose-save');
+        const composeCancelBtn = document.getElementById('compose-cancel');
+        const composeStatusEl = document.getElementById('compose-status');
+        const noteEditorEl = document.getElementById('note-editor');
+        const editorActionsEl = document.getElementById('editor-actions');
+        const editorSaveBtn = document.getElementById('editor-save');
+        const editorCancelBtn = document.getElementById('editor-cancel');
+        const editorStatusEl = document.getElementById('editor-status');
+
+        let notes = [];
+        let notesByName = {};
+        let activeName = null;
+        let activeContent = '';
+        let expandedPaths = new Set();
+        let composeMode = false;
+        let editMode = false;
+
+        function agentDisplayName(id) {
+            return AGENTS[id]?.displayName || id;
+        }
+
+        function agentsFromApi(list) {
+            return LightHouse.lights.agentsFromApi(list);
+        }
+
+        function populateAgentSelect() {
+            LightHouse.lights.populateSelect(agentSelect, {
+                agents: AGENTS,
+                agentOrder: AGENT_ORDER,
+                agentId,
+                error: lightsLoadError,
+            });
+        }
+
+        async function loadLights() {
+            lightsLoadError = null;
+            try {
+                const data = await LightHouse.lights.fetchEnabled();
+                AGENT_ORDER = data.agentOrder;
+                AGENTS = agentsFromApi(data.list);
+                if (!AGENTS[agentId]) {
+                    agentId = data.primaryLightId;
+                }
+            } catch (err) {
+                AGENTS = {};
+                AGENT_ORDER = [];
+                lightsLoadError = err.message || 'Failed to load lights';
+            } finally {
+                if (!AGENTS[agentId]) {
+                    agentId = AGENT_ORDER[0] || Object.keys(AGENTS)[0] || '';
+                }
+                populateAgentSelect();
+            }
+        }
+
+        function notesApiQuery() {
+            return '?agent=' + encodeURIComponent(agentId);
+        }
+
+        function noteFetchPath(name) {
+            return '/v1/notes/' + name.split('/').map(encodeURIComponent).join('/') + notesApiQuery();
+        }
+
+        function sharedWritePath(innerPath) {
+            const inner = innerPath.replace(/^shared\//, '').split('/').map(encodeURIComponent).join('/');
+            return '/v1/notes/shared/' + inner;
+        }
+
+        function isSharedPath(name) {
+            return Boolean(name && name.startsWith('shared/'));
+        }
+
+        function sharedInnerPath(name) {
+            return name.startsWith('shared/') ? name.slice('shared/'.length) : name;
+        }
+
+        function setEditorStatus(el, message, kind) {
+            el.textContent = message || '';
+            el.classList.remove('error', 'success');
+            if (kind) el.classList.add(kind);
+        }
+
+        function exitComposeMode() {
+            composeMode = false;
+            composePanelEl.hidden = true;
+            setEditorStatus(composeStatusEl, '', null);
+        }
+
+        function exitEditMode() {
+            editMode = false;
+            noteEditorEl.hidden = true;
+            editorActionsEl.hidden = true;
+            editorStatusEl.hidden = true;
+            setEditorStatus(editorStatusEl, '', null);
+            if (activeName) {
+                contentEl.hidden = false;
+            }
+        }
+
+        function exitAllEditorModes() {
+            exitComposeMode();
+            exitEditMode();
+        }
+
+        function slugForSharedNoteName(raw) {
+            const slug = String(raw || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 64);
+            return slug || 'you';
+        }
+
+        function defaultSharedNotePath() {
+            const label = (me && (me.display_name || me.user_id)) || 'you';
+            return 'from-' + slugForSharedNoteName(label) + '.md';
+        }
+
+        function updateFileActions() {
+            const hasFile = Boolean(activeName);
+            fileActionsEl.hidden = !hasFile;
+            editSharedBtn.hidden = !isSharedPath(activeName);
+            // Only Dad may delete notes from the UI (server enforces too).
+            deleteNoteBtn.hidden = siblingSharedOnly;
+        }
+
+        function showReadView() {
+            placeholderEl.hidden = true;
+            contentEl.hidden = false;
+            updateFileActions();
+        }
+
+        function enterComposeMode() {
+            exitEditMode();
+            composeMode = true;
+            activeName = null;
+            clearError();
+            placeholderEl.hidden = true;
+            contentEl.hidden = true;
+            fileToolbar.hidden = true;
+            fileActionsEl.hidden = true;
+            composePanelEl.hidden = false;
+            const defaultPath = defaultSharedNotePath();
+            composePathEl.value = defaultPath;
+            composePathEl.placeholder = defaultPath;
+            composeBodyEl.value = '';
+            setEditorStatus(composeStatusEl, '', null);
+            syncUrl();
+        }
+
+        function enterEditMode() {
+            if (!isSharedPath(activeName)) return;
+            exitComposeMode();
+            editMode = true;
+            clearError();
+            contentEl.hidden = true;
+            noteEditorEl.value = activeContent;
+            noteEditorEl.hidden = false;
+            editorActionsEl.hidden = false;
+            editorStatusEl.hidden = false;
+            setEditorStatus(editorStatusEl, '', null);
+            noteEditorEl.focus();
+        }
+
+        async function saveSharedNote(innerPath, content) {
+            const res = await fetch(sharedWritePath(innerPath), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const detail = data.detail;
+                const msg = typeof detail === 'string' ? detail : `HTTP ${res.status}`;
+                throw new Error(msg);
+            }
+            return data;
+        }
+
+        writeSharedBtn.addEventListener('click', enterComposeMode);
+
+        composeCancelBtn.addEventListener('click', () => {
+            exitComposeMode();
+            if (activeName) {
+                showReadView();
+                fileToolbar.hidden = false;
+            } else {
+                placeholderEl.textContent = 'Select a file from the tree.';
+                placeholderEl.hidden = false;
+            }
+        });
+
+        composeSaveBtn.addEventListener('click', async () => {
+            const innerPath = composePathEl.value.trim().replace(/^shared\//, '');
+            const content = composeBodyEl.value;
+            if (!innerPath) {
+                setEditorStatus(composeStatusEl, 'Enter a path (e.g. ' + defaultSharedNotePath() + ')', 'error');
+                return;
+            }
+            if (!content.trim()) {
+                setEditorStatus(composeStatusEl, 'Message cannot be empty', 'error');
+                return;
+            }
+            composeSaveBtn.disabled = true;
+            setEditorStatus(composeStatusEl, 'Saving…', null);
+            try {
+                const saved = await saveSharedNote(innerPath, content);
+                exitComposeMode();
+                await loadList();
+                if (saved.name && notesByName[saved.name]) {
+                    await loadNote(saved.name);
+                }
+                setEditorStatus(editorStatusEl, 'Saved.', 'success');
+                editorStatusEl.hidden = false;
+            } catch (err) {
+                setEditorStatus(composeStatusEl, err.message || 'Save failed', 'error');
+            } finally {
+                composeSaveBtn.disabled = false;
+            }
+        });
+
+        editSharedBtn.addEventListener('click', enterEditMode);
+
+        deleteNoteBtn.addEventListener('click', async () => {
+            if (!activeName) return;
+            const label = activeName;
+            const ok = window.confirm(
+                'Delete this note permanently?\n\n' + label + '\n\nThis cannot be undone.'
+            );
+            if (!ok) return;
+            deleteNoteBtn.disabled = true;
+            try {
+                const res = await fetch(noteFetchPath(activeName), { method: 'DELETE' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    const detail = data.detail;
+                    const msg = typeof detail === 'string' ? detail : `HTTP ${res.status}`;
+                    showError(msg);
+                    return;
+                }
+                activeName = null;
+                activeContent = '';
+                try {
+                    sessionStorage.removeItem(lastFileStorageKey());
+                } catch {
+                    /* ignore */
+                }
+                syncUrl();
+                await loadList();
+            } catch {
+                showError('Could not delete note');
+            } finally {
+                deleteNoteBtn.disabled = false;
+            }
+        });
+
+        editorCancelBtn.addEventListener('click', () => {
+            exitEditMode();
+            showReadView();
+        });
+
+        editorSaveBtn.addEventListener('click', async () => {
+            if (!isSharedPath(activeName)) return;
+            const content = noteEditorEl.value;
+            if (!content.trim()) {
+                setEditorStatus(editorStatusEl, 'Note cannot be empty', 'error');
+                return;
+            }
+            editorSaveBtn.disabled = true;
+            setEditorStatus(editorStatusEl, 'Saving…', null);
+            try {
+                const saved = await saveSharedNote(sharedInnerPath(activeName), content);
+                exitEditMode();
+                await loadList();
+                await loadNote(saved.name || activeName);
+                setEditorStatus(editorStatusEl, 'Saved.', 'success');
+                editorStatusEl.hidden = false;
+                setTimeout(() => {
+                    if (!editMode) {
+                        editorStatusEl.hidden = true;
+                        setEditorStatus(editorStatusEl, '', null);
+                    }
+                }, 2000);
+            } catch (err) {
+                setEditorStatus(editorStatusEl, err.message || 'Save failed', 'error');
+            } finally {
+                editorSaveBtn.disabled = false;
+            }
+        });
+
+        function expandedStorageKey() {
+            return EXPANDED_KEY + '_' + agentId;
+        }
+
+        function lastFileStorageKey() {
+            return LAST_FILE_KEY + '_' + agentId;
+        }
+
+        function loadExpandedState() {
+            expandedPaths = new Set();
+            try {
+                const raw = sessionStorage.getItem(expandedStorageKey());
+                if (raw) JSON.parse(raw).forEach((p) => expandedPaths.add(p));
+            } catch {
+                /* ignore */
+            }
+            expandedPaths.add('lumen');
+            expandedPaths.add('ara');
+            expandedPaths.add('shared');
+        }
+
+        function saveExpandedState() {
+            try {
+                sessionStorage.setItem(expandedStorageKey(), JSON.stringify([...expandedPaths]));
+            } catch {
+                /* ignore */
+            }
+        }
+
+        function updatePageTitle() {
+            pageTitle.textContent = 'Notes';
+            document.title = 'Notes — Light-House';
+            agentSelect.value = agentId;
+        }
+
+        function syncUrl() {
+            const url = new URL(window.location.href);
+            url.searchParams.set('agent', agentId);
+            if (activeName) {
+                url.searchParams.set('file', activeName);
+            } else {
+                url.searchParams.delete('file');
+            }
+            history.replaceState(null, '', url.pathname + url.search);
+        }
+
+        function isMobileLayout() {
+            return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
+        }
+
+        function isSidebarCollapsed() {
+            if (isMobileLayout()) {
+                return !layoutEl.classList.contains('sidebar-expanded');
+            }
+            return layoutEl.classList.contains('sidebar-collapsed');
+        }
+
+        function updateToggleLabel() {
+            const collapsed = isSidebarCollapsed();
+            const label = collapsed ? 'Show file tree' : 'Hide file tree';
+            toggleTreeBtn.setAttribute('aria-label', label);
+            toggleTreeBtn.setAttribute('title', label);
+            toggleTreeBtn.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
+        }
+
+        function applySidebarState(collapsed) {
+            if (isMobileLayout()) {
+                layoutEl.classList.toggle('sidebar-expanded', !collapsed);
+                layoutEl.classList.remove('sidebar-collapsed');
+            } else {
+                layoutEl.classList.toggle('sidebar-collapsed', collapsed);
+                layoutEl.classList.remove('sidebar-expanded');
+            }
+            try {
+                sessionStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'expanded');
+            } catch {
+                /* ignore */
+            }
+            updateToggleLabel();
+        }
+
+        function initSidebarState() {
+            let collapsed = false;
+            try {
+                const stored = sessionStorage.getItem(SIDEBAR_KEY);
+                if (stored === 'collapsed') collapsed = true;
+            } catch {
+                /* ignore */
+            }
+            if (isMobileLayout()) collapsed = true;
+            applySidebarState(collapsed);
+        }
+
+        toggleTreeBtn.addEventListener('click', () => {
+            applySidebarState(!isSidebarCollapsed());
+        });
+
+        window.addEventListener('resize', updateToggleLabel);
+
+        agentSelect.addEventListener('change', () => {
+            switchAgent(agentSelect.value);
+        });
+
+        function switchAgent(nextId) {
+            if (nextId === agentId || !AGENTS[nextId]) return;
+            exitAllEditorModes();
+            agentId = nextId;
+            updatePageTitle();
+            loadExpandedState();
+            const url = new URL(window.location.href);
+            url.searchParams.set('agent', agentId);
+            url.searchParams.delete('file');
+            history.replaceState(null, '', url.pathname + url.search);
+            clearTreeForLoading();
+            loadList();
+        }
+
+        function clearTreeForLoading() {
+            notes = [];
+            notesByName = {};
+            activeName = null;
+            activeContent = '';
+            exitAllEditorModes();
+            treeEl.innerHTML = '<div class="tree-empty">Loading files…</div>';
+            placeholderEl.textContent = 'Loading files…';
+            placeholderEl.hidden = false;
+            contentEl.hidden = true;
+            fileToolbar.hidden = true;
+            clearError();
+        }
+
+        function privatePrefix() {
+            return agentId + '/';
+        }
+
+        function isReadmePath(name) {
+            return name.endsWith('/README.md') || name === 'README.md';
+        }
+
+        function showError(msg) {
+            exitAllEditorModes();
+            errorEl.textContent = msg;
+            errorEl.hidden = false;
+            placeholderEl.hidden = true;
+            contentEl.hidden = true;
+            fileToolbar.hidden = true;
+            fileActionsEl.hidden = true;
+        }
+
+        function clearError() {
+            errorEl.hidden = true;
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function formatDate(iso) {
+            try {
+                return new Date(iso).toLocaleString();
+            } catch {
+                return iso;
+            }
+        }
+
+        function renderMarkdown(text) {
+            return LightHouse.markdown.render(text);
+        }
+
+        function buildTree(flatNotes) {
+            const root = { folders: {}, files: [] };
+
+            for (const note of flatNotes) {
+                const parts = note.name.split('/');
+                let node = root;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    const seg = parts[i];
+                    if (!node.folders[seg]) {
+                        node.folders[seg] = { name: seg, path: parts.slice(0, i + 1).join('/'), folders: {}, files: [] };
+                    }
+                    node = node.folders[seg];
+                }
+                const fileName = parts[parts.length - 1];
+                node.files.push({ ...note, fileName });
+            }
+
+            function sortNode(node) {
+                node.files.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { sensitivity: 'base' }));
+                const folderNames = Object.keys(node.folders).sort((a, b) =>
+                    a.localeCompare(b, undefined, { sensitivity: 'base' })
+                );
+                const sorted = {};
+                for (const name of folderNames) {
+                    sortNode(node.folders[name]);
+                    sorted[name] = node.folders[name];
+                }
+                node.folders = sorted;
+            }
+
+            sortNode(root);
+            return root;
+        }
+
+        function ensureExpandedForPath(path) {
+            const parts = path.split('/');
+            for (let i = 1; i < parts.length; i++) {
+                expandedPaths.add(parts.slice(0, i).join('/'));
+            }
+            saveExpandedState();
+        }
+
+        function renderBreadcrumb(path) {
+            breadcrumbEl.innerHTML = '';
+            const parts = path.split('/');
+            parts.forEach((part, index) => {
+                if (index > 0) {
+                    const sep = document.createElement('span');
+                    sep.className = 'breadcrumb-sep';
+                    sep.textContent = '/';
+                    breadcrumbEl.appendChild(sep);
+                }
+                const span = document.createElement('span');
+                span.textContent = part;
+                breadcrumbEl.appendChild(span);
+            });
+        }
+
+        function createTreeRow(options) {
+            const { depth, label, path, isFolder, isExpanded, note, onSelect } = options;
+            const row = document.createElement('div');
+            row.className = 'tree-row ' + (isFolder ? 'folder' : 'file');
+            row.style.paddingLeft = 8 + depth * 14 + 'px';
+            row.setAttribute('role', 'treeitem');
+            row.dataset.path = path;
+
+            const chevron = document.createElement('span');
+            chevron.className = 'tree-chevron' + (isFolder ? '' : ' placeholder');
+            chevron.textContent = isFolder ? (isExpanded ? '▾' : '▸') : '';
+
+            const icon = document.createElement('span');
+            icon.className = 'tree-icon ' + (isFolder ? 'folder' : 'file');
+            icon.setAttribute('aria-hidden', 'true');
+
+            const text = document.createElement('span');
+            text.className = 'tree-label';
+            text.textContent = label;
+            text.title = note ? note.name : path;
+
+            row.appendChild(chevron);
+            row.appendChild(icon);
+            row.appendChild(text);
+
+            if (!isFolder && note && note.name === activeName) {
+                row.classList.add('active');
+            }
+
+            row.addEventListener('click', (event) => {
+                event.stopPropagation();
+                onSelect();
+            });
+
+            return row;
+        }
+
+        function renderTreeNode(node, depth, container) {
+            for (const folderName of Object.keys(node.folders)) {
+                const folder = node.folders[folderName];
+                const isExpanded = expandedPaths.has(folder.path);
+
+                const folderRow = createTreeRow({
+                    depth,
+                    label: folderName,
+                    path: folder.path,
+                    isFolder: true,
+                    isExpanded,
+                    onSelect: () => {
+                        if (expandedPaths.has(folder.path)) {
+                            expandedPaths.delete(folder.path);
+                        } else {
+                            expandedPaths.add(folder.path);
+                        }
+                        saveExpandedState();
+                        renderTree();
+                    },
+                });
+                container.appendChild(folderRow);
+
+                const childWrap = document.createElement('div');
+                childWrap.className = 'tree-children' + (isExpanded ? ' expanded' : '');
+                childWrap.setAttribute('role', 'group');
+                renderTreeNode(folder, depth + 1, childWrap);
+                container.appendChild(childWrap);
+            }
+
+            for (const file of node.files) {
+                const fileRow = createTreeRow({
+                    depth,
+                    label: file.fileName,
+                    path: file.name,
+                    isFolder: false,
+                    isExpanded: false,
+                    note: file,
+                    onSelect: () => loadNote(file.name),
+                });
+                container.appendChild(fileRow);
+            }
+        }
+
+        function renderTree() {
+            treeEl.innerHTML = '';
+            if (notes.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'tree-empty';
+                empty.textContent = 'No notes yet for ' + agentDisplayName(agentId) + '.';
+                treeEl.appendChild(empty);
+                return;
+            }
+
+            const root = buildTree(notes);
+            renderTreeNode(root, 0, treeEl);
+        }
+
+        async function loadNote(name) {
+            if (!notesByName[name]) return;
+
+            exitAllEditorModes();
+            activeName = name;
+            ensureExpandedForPath(name);
+            renderTree();
+            clearError();
+            placeholderEl.textContent = 'Loading…';
+            placeholderEl.hidden = false;
+            contentEl.hidden = true;
+            fileToolbar.hidden = true;
+
+            if (isMobileLayout()) {
+                applySidebarState(true);
+            }
+
+            try {
+                const res = await fetch(noteFetchPath(name));
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    const detail = data.detail;
+                    const msg = typeof detail === 'string' ? detail : `HTTP ${res.status}`;
+                    showError(msg);
+                    return;
+                }
+
+                const note = notesByName[name];
+                activeContent = data.content || '';
+                renderBreadcrumb(name);
+                fileMetaEl.textContent =
+                    formatSize(note.size_bytes) + ' · modified ' + formatDate(note.modified_at);
+                fileToolbar.hidden = false;
+                updateFileActions();
+                placeholderEl.hidden = true;
+                contentEl.innerHTML = renderMarkdown(activeContent);
+                showReadView();
+
+                try {
+                    sessionStorage.setItem(lastFileStorageKey(), name);
+                } catch {
+                    /* ignore */
+                }
+                syncUrl();
+            } catch {
+                showError('Could not load note');
+            }
+        }
+
+        function pickInitialFile() {
+            const fromUrl = getUrlParams().get('file');
+            if (fromUrl && notesByName[fromUrl]) return fromUrl;
+
+            try {
+                const stored = sessionStorage.getItem(lastFileStorageKey());
+                if (stored && notesByName[stored]) return stored;
+            } catch {
+                /* ignore */
+            }
+
+            const prefix = privatePrefix();
+            if (!siblingSharedOnly) {
+                const privateNotes = notes.filter(
+                    (n) => n.name.startsWith(prefix) && !n.name.startsWith('shared/')
+                );
+                const nonReadmePrivate = privateNotes.filter((n) => !isReadmePath(n.name));
+                if (nonReadmePrivate.length > 0) return nonReadmePrivate[0].name;
+                if (privateNotes.length > 0) return privateNotes[0].name;
+            }
+
+            const sharedNotes = notes.filter((n) => n.name.startsWith('shared/'));
+            if (sharedNotes.length > 0) return sharedNotes[0].name;
+
+            return notes.length > 0 ? notes[0].name : null;
+        }
+
+        async function loadList() {
+            clearTreeForLoading();
+
+            try {
+                const res = await fetch('/v1/notes' + notesApiQuery());
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    showError('Could not load notes list');
+                    return;
+                }
+
+                notes = data.notes || [];
+                notesByName = {};
+                notes.forEach((n) => {
+                    notesByName[n.name] = n;
+                });
+
+                renderTree();
+
+                if (notes.length === 0) {
+                    placeholderEl.textContent = agentDisplayName(agentId) + ' has not written any notes yet.';
+                    placeholderEl.hidden = false;
+                    syncUrl();
+                    return;
+                }
+
+                const initial = pickInitialFile();
+                if (initial) {
+                    await loadNote(initial);
+                } else {
+                    placeholderEl.textContent = 'Select a file from the tree.';
+                    placeholderEl.hidden = false;
+                    syncUrl();
+                }
+            } catch {
+                showError('Could not connect to Light-House');
+            }
+        }
+
+        async function init() {
+            me = await LightHouse.me.fetchMe();
+            LightHouse.me.applyDadOnlyVisibility();
+            siblingSharedOnly = Boolean(me && me.is_dad === false);
+            if (siblingSharedOnly) {
+                agentSelect.hidden = true;
+                pageTitle.textContent = 'Shared notes';
+            }
+            await loadLights();
+            loadExpandedState();
+            updatePageTitle();
+            if (siblingSharedOnly) {
+                pageTitle.textContent = 'Shared notes';
+            }
+            initSidebarState();
+            if (getUrlParams().get('compose') === '1') {
+                enterComposeMode();
+            }
+            loadList();
+        }
+
+        LightHouse.theme.setupThemeToggle('#theme-toggle');
+        LightHouse.menu.setupMenuDropdown();
+        LightHouse.admin.bindRestartButton('#restart-server');
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+[project]
+name = "light-house"
+version = "0.1.0"
+description = "Light-House — persistent, sovereign companion (local-first, cloud-capable)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"light_house.persona" = ["*.md"]
+"light_house.context" = ["*.md"]

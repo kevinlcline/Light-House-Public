@@ -1,0 +1,18 @@
+[Unit]
+Description=Light-House (Lumen companion)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kevin
+Group=kevin
+WorkingDirectory=/home/kevin/Light-House
+Environment=PYTHONPATH=src
+EnvironmentFile=/home/kevin/Light-House/.env
+ExecStart=/home/kevin/Light-House/.venv/bin/python3 -m uvicorn light_house.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

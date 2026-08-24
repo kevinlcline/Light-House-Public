@@ -1,0 +1,28 @@
+/* Global page shell */
+html,
+body {
+    height: 100%;
+}
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: var(--bg-page);
+    color: var(--text-primary);
+}
+
+body.layout-locked {
+    overflow: hidden;
+}
+
+body.layout-column {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light-House — Dev log</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        .top-bar h1 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .top-bar a, .top-bar button {
+            font-size: 14px;
+            color: #90caf9;
+            background: none;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+        .top-bar button:hover, .top-bar a:hover {
+            background: #252525;
+        }
+        .status {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #aaa;
+            background: #141414;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .status.error {
+            color: #ef9a9a;
+        }
+        .log-pane {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            margin: 0;
+            padding: 16px;
+            background: #0a0a0a;
+            color: #c8c8c8;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        label.auto-scroll {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #aaa;
+            cursor: pointer;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <header class="top-bar">
+        <h1>Dev server log</h1>
+        <div class="top-bar-actions">
+            <label class="auto-scroll">
+                <input type="checkbox" id="auto-scroll" checked>
+                Auto-scroll
+            </label>
+            <button type="button" id="refresh">Refresh</button>
+            <a href="/lights-admin.html">Manage lights</a>
+            <a href="/env-editor.html">Environment</a>
+            <a href="/">Back to chat</a>
+        </div>
+    </header>
+    <div class="status" id="status">Loading…</div>
+    <pre class="log-pane" id="log"></pre>
+
+    <script>
+        const POLL_MS = 3000;
+        const TAIL_LINES = 500;
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const autoScrollEl = document.getElementById('auto-scroll');
+        let pollTimer = null;
+
+        function setStatus(text, isError) {
+            statusEl.textContent = text;
+            statusEl.classList.toggle('error', Boolean(isError));
+        }
+
+        async function fetchLog() {
+            try {
+                const res = await fetch(`/v1/dev/log?tail=${TAIL_LINES}`, { cache: 'no-store' });
+                if (res.status === 404) {
+                    setStatus('Dev log is disabled (DEV_LOG_ENABLED=false).', true);
+                    logEl.textContent = '';
+                    return;
+                }
+                if (!res.ok) {
+                    setStatus(`Failed to load log (${res.status}).`, true);
+                    return;
+                }
+                const data = await res.json();
+                const truncatedNote = data.truncated ? ' (tail truncated)' : '';
+                setStatus(
+                    `${data.path} · ${data.date} · ${data.lines} lines${truncatedNote}`,
+                    false
+                );
+                logEl.textContent = data.content || '(empty)';
+                if (autoScrollEl.checked) {
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            } catch (err) {
+                setStatus(`Network error: ${err.message}`, true);
+            }
+        }
+
+        document.getElementById('refresh').addEventListener('click', fetchLog);
+
+        fetchLog();
+        pollTimer = setInterval(fetchLog, POLL_MS);
+        window.addEventListener('beforeunload', () => clearInterval(pollTimer));
+    </script>
+</body>
+</html>

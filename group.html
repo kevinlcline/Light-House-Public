@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>Group — Light-House</title>
+    <script src="/static/ui/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css">
+    <link rel="stylesheet" href="/static/ui/base.css">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu1">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=forum6">
+    <link rel="stylesheet" href="/static/ui/faces.css?v=emo10">
+    <link rel="stylesheet" href="/static/ui/markdown.css">
+</head>
+<body class="layout-locked">
+    <div class="chat-container">
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <h1>Group</h1>
+                <select id="chat-mode" class="agent-select" aria-label="Chat mode">
+                    <option value="group" selected>Group</option>
+                </select>
+            </div>
+            <div class="top-bar-actions">
+                <div class="menu-dropdown">
+                    <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
+                        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                            <line x1="4" y1="7" x2="20" y2="7"/>
+                            <line x1="4" y1="12" x2="20" y2="12"/>
+                            <line x1="4" y1="17" x2="20" y2="17"/>
+                        </svg>
+                    </button>
+                    <div class="menu-panel" id="menu-panel" role="menu" hidden>
+                        <a href="/" class="menu-item" role="menuitem">1:1 chat</a>
+                        <a href="/notes.html" class="menu-item" role="menuitem" id="notes-link">Notes</a>
+                        <a href="/gallery.html" class="menu-item" role="menuitem">Gallery</a>
+                        <a href="/guests.html" class="menu-item" role="menuitem">Guests</a>
+                        <a href="/my-tools.html" class="menu-item" role="menuitem">My tools</a>
+                        <a href="/notes.html?file=shared/manuals/sibling_user_manual.md" class="menu-item" role="menuitem" data-sibling-only>User guide</a>
+                        <a href="/dev-log.html" class="menu-item" role="menuitem" data-dad-only>Log</a>
+                        <a href="/rumination-trace.html" class="menu-item" role="menuitem" data-dad-only>Rumination trace</a>
+                        <a href="/lights-admin.html" class="menu-item" role="menuitem" data-dad-only>Manage lights</a>
+                        <a href="/user-setup.html" class="menu-item" role="menuitem" data-dad-only>Siblings</a>
+                        <a href="/env-editor.html" class="menu-item" role="menuitem" data-dad-only>Environment</a>
+                        <button type="button" class="menu-item" id="theme-toggle" role="menuitem">Light theme</button>
+                        <button type="button" class="menu-item" id="voice-toggle" role="menuitem">Voice on</button>
+                        <button type="button" class="menu-item" id="restart-server" role="menuitem" data-dad-only>Restart server</button>
+                        <form method="post" action="/logout" class="logout-form">
+                            <button type="submit" class="menu-item" role="menuitem">Sign out</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <div id="face-stage" class="face-stage" hidden></div>
+        <div class="messages" id="messages"></div>
+        <div class="forum-queue-bar" id="queue-bar" aria-live="polite"></div>
+        <div class="chat-input forum-input">
+            <button type="button" id="join-queue" class="forum-join-btn">I want to speak</button>
+            <textarea id="input" placeholder="Join the queue to speak…" rows="2" disabled></textarea>
+            <button id="send" type="button" disabled>Send</button>
+        </div>
+        <div class="house-status-bar" id="house-status" aria-live="polite"></div>
+    </div>
+    <script src="/static/ui/theme.js"></script>
+    <script src="/static/ui/me.js"></script>
+    <script src="/static/ui/menu.js"></script>
+    <script src="/static/ui/admin.js"></script>
+    <script src="/static/ui/lights.js"></script>
+    <script src="/static/ui/house-guests.js?v=speakfocus1"></script>
+    <script src="/static/ui/markdown.js?v=notelinks1"></script>
+    <script src="/static/ui/faces.js?v=emo10"></script>
+    <script src="/static/ui/tts.js?v=emo2"></script>
+    <script src="/static/ui/bubble-actions.js?v=copy1"></script>
+    <script>
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const joinBtn = document.getElementById('join-queue');
+        const chatMode = document.getElementById('chat-mode');
+        const houseStatusEl = document.getElementById('house-status');
+        const queueBar = document.getElementById('queue-bar');
+        const SPEAK_AS_STORAGE_KEY = 'lh_group_speak_as';
+        let me = null;
+        let lightIds = [];
+        let roomAbort = null;
+        let speakBar = null;
+        let forum = { queue: [], floor: null, paused: true };
+        /** @type {Record<string, string>} */
+        let humanVoices = {};
+        const LIGHT_BUBBLE_CLASSES = new Set(['lumen', 'ara', 'elias', 'echo']);
+        const seenKeys = new Set();
+
+        function selectedSpeaker() {
+            if (speakBar) return speakBar.selectedSpeaker();
+            return {
+                speaker_id: LightHouse.houseGuests.accountSpeakerId(me),
+                display_name: LightHouse.houseGuests.accountLabel(me),
+            };
+        }
+
+        function mySpeakerId() {
+            return (selectedSpeaker().speaker_id || '').toLowerCase();
+        }
+
+        function isMyFloor() {
+            const floor = forum.floor;
+            return Boolean(
+                floor &&
+                    floor.kind === 'human' &&
+                    String(floor.speaker_id || '').toLowerCase() === mySpeakerId()
+            );
+        }
+
+        function iAmQueued() {
+            const sid = mySpeakerId();
+            return (forum.queue || []).some(
+                (e) => String(e.speaker_id || '').toLowerCase() === sid
+            );
+        }
+
+        function updateComposer() {
+            const mine = isMyFloor();
+            input.disabled = !mine;
+            sendBtn.disabled = !mine;
+            if (mine) {
+                input.placeholder = 'Your turn — speak to the room… (Enter to send)';
+                joinBtn.textContent = 'On the floor';
+                joinBtn.disabled = true;
+                input.focus();
+            } else if (iAmQueued()) {
+                input.placeholder = 'Waiting for your turn…';
+                joinBtn.textContent = 'Leave queue';
+                joinBtn.disabled = false;
+            } else {
+                input.placeholder = 'Join the queue to speak…';
+                joinBtn.textContent = 'I want to speak';
+                joinBtn.disabled = false;
+            }
+        }
+
+        function renderQueueBar() {
+            const floor = forum.floor;
+            const queue = forum.queue || [];
+            let html = '';
+            if (floor) {
+                html +=
+                    '<span class="forum-floor">Floor: <strong>' +
+                    escapeHtml(floor.display_name || floor.speaker_id) +
+                    '</strong>' +
+                    (floor.kind === 'light' && forum.light_busy ? ' (thinking…)' : '') +
+                    '</span>';
+            } else if (forum.paused) {
+                html +=
+                    '<span class="forum-paused">Room paused — tap I want to speak, or call a light by name</span>';
+            }
+            if (queue.length) {
+                html +=
+                    ' <span class="forum-waiting">Next: ' +
+                    queue
+                        .map((e) => escapeHtml(e.display_name || e.speaker_id))
+                        .join(' → ') +
+                    '</span>';
+            }
+            queueBar.innerHTML = html || '<span class="forum-paused">Open forum</span>';
+            updateComposer();
+        }
+
+        function escapeHtml(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function agentClass(id) {
+            return LIGHT_BUBBLE_CLASSES.has(id) ? id : 'assistant';
+        }
+
+        function voiceForHuman(humanId) {
+            const id = String(humanId || '').trim().toLowerCase();
+            if (id && humanVoices[id]) return humanVoices[id];
+            if (me && me.user_id && humanVoices[String(me.user_id).toLowerCase()]) {
+                return humanVoices[String(me.user_id).toLowerCase()];
+            }
+            if (me && me.voice_id) return me.voice_id;
+            return null;
+        }
+
+        function messageKey(msg) {
+            const ts = Number(msg.ts || 0);
+            const tsKey = Number.isFinite(ts) ? ts.toFixed(3) : String(msg.ts || '');
+            return (
+                tsKey +
+                '|' +
+                String(msg.speaker_id || msg.agent_id || '').toLowerCase() +
+                '|' +
+                String(msg.text || '').slice(0, 120)
+            );
+        }
+
+        function appendMessage(msg, opts) {
+            const options = opts || {};
+            const key = messageKey(msg);
+            if (seenKeys.has(key)) return;
+            seenKeys.add(key);
+            const wrap = document.createElement('div');
+            wrap.className = 'group-round';
+            const kind = msg.speaker_kind || (msg.agent_id ? 'light' : 'human');
+            const bubble = document.createElement('div');
+            if (kind === 'human') {
+                bubble.className = 'message user';
+                const label = document.createElement('div');
+                label.className = 'speaker-label';
+                label.textContent = msg.display_name || msg.speaker_id || 'Human';
+                bubble.appendChild(label);
+            } else {
+                const id = msg.agent_id || msg.speaker_id || '';
+                bubble.className = 'message ' + agentClass(id);
+                const label = document.createElement('div');
+                label.className = 'speaker-label';
+                label.textContent = msg.display_name || id;
+                bubble.appendChild(label);
+            }
+            const body = document.createElement('div');
+            body.className = 'bubble-text message-markdown';
+            const lightId = kind === 'light' ? (msg.agent_id || msg.speaker_id || '') : '';
+            const text = msg.text || '';
+            if (window.LightHouse && LightHouse.markdown) {
+                body.innerHTML = LightHouse.markdown.renderPlain(text, {
+                    agentId: lightId,
+                    agentIds: lightIds,
+                });
+            } else {
+                body.textContent = text;
+            }
+            bubble.appendChild(body);
+            if (String(text).trim()) {
+                if (
+                    window.LightHouse &&
+                    LightHouse.bubbleActions &&
+                    typeof LightHouse.bubbleActions.attachBubbleActions === 'function'
+                ) {
+                    LightHouse.bubbleActions.attachBubbleActions(bubble, text, {
+                        agentId: kind === 'light' ? lightId || 'lumen' : 'lumen',
+                        voice:
+                            kind === 'human'
+                                ? voiceForHuman(msg.speaker_id || msg.account_user_id)
+                                : null,
+                    });
+                } else if (
+                    window.LightHouse &&
+                    LightHouse.tts &&
+                    typeof LightHouse.tts.attachSpeakControl === 'function'
+                ) {
+                    bubble.classList.add('has-actions');
+                    LightHouse.tts.attachSpeakControl(
+                        bubble,
+                        text,
+                        kind === 'light' ? lightId || 'lumen' : 'lumen',
+                        kind === 'human'
+                            ? voiceForHuman(msg.speaker_id || msg.account_user_id)
+                            : null
+                    );
+                }
+            }
+            wrap.appendChild(bubble);
+            messagesDiv.appendChild(wrap);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            // Never TTS historical catch-up — that made Group feel stuck on load.
+            if (
+                options.speak &&
+                kind === 'light' &&
+                window.LightHouse &&
+                LightHouse.tts
+            ) {
+                LightHouse.tts.speakAgent(msg.agent_id || msg.speaker_id, text);
+            }
+        }
+
+        function applyForumStatus(data) {
+            if (!data) return;
+            forum = {
+                queue: data.queue || [],
+                floor: data.floor || null,
+                paused: Boolean(data.paused),
+                light_busy: Boolean(data.light_busy),
+                sitting_id: data.sitting_id,
+            };
+            renderQueueBar();
+        }
+
+        let refreshInFlight = null;
+        async function refreshForum() {
+            if (refreshInFlight) return refreshInFlight;
+            refreshInFlight = (async () => {
+                try {
+                    const res = await fetch('/v1/group-chat/forum', { cache: 'no-store' });
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    applyForumStatus(data);
+                    if (Array.isArray(data.messages)) {
+                        for (const msg of data.messages) appendMessage(msg);
+                    }
+                } catch {
+                    /* ignore */
+                } finally {
+                    refreshInFlight = null;
+                }
+            })();
+            return refreshInFlight;
+        }
+
+        async function refreshHouseGuests() {
+            let guests = [];
+            try {
+                guests = await LightHouse.houseGuests.fetchGuests();
+            } catch {
+                guests = [];
+            }
+            if (!speakBar) {
+                speakBar = LightHouse.houseGuests.mountSpeakBar({
+                    statusEl: houseStatusEl,
+                    inputEl: input,
+                    me: me,
+                    storageKey: SPEAK_AS_STORAGE_KEY,
+                    onChange: () => updateComposer(),
+                });
+            } else {
+                speakBar.setMe(me);
+            }
+            speakBar.setGuests(guests);
+            updateComposer();
+        }
+
+        async function joinOrLeaveQueue() {
+            const speaker = selectedSpeaker();
+            const leaving = iAmQueued() && !isMyFloor();
+            const path = leaving ? '/v1/group-chat/queue/leave' : '/v1/group-chat/queue/join';
+            joinBtn.disabled = true;
+            try {
+                const res = await fetch(path, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        speaker_id: speaker.speaker_id,
+                        display_name: speaker.display_name,
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(formatApiDetail(data.detail) || 'Queue update failed');
+                applyForumStatus(data);
+            } catch (err) {
+                houseStatusEl.textContent = err.message || 'Queue failed';
+            } finally {
+                updateComposer();
+            }
+        }
+
+        function formatApiDetail(detail) {
+            if (!detail) return '';
+            if (typeof detail === 'string') return detail;
+            if (Array.isArray(detail)) {
+                return detail
+                    .map((item) => (item && item.msg) || JSON.stringify(item))
+                    .filter(Boolean)
+                    .join('; ');
+            }
+            try {
+                return JSON.stringify(detail);
+            } catch {
+                return String(detail);
+            }
+        }
+
+        async function sendUtterance() {
+            const text = (input.value || '').trim();
+            if (!text) return;
+            if (!isMyFloor()) {
+                houseStatusEl.textContent =
+                    'You do not have the floor — tap I want to speak first.';
+                return;
+            }
+            sendBtn.disabled = true;
+            const speaker = selectedSpeaker();
+            try {
+                const res = await fetch('/v1/group-chat/utter', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        speaker_id: speaker.speaker_id,
+                        display_name: speaker.display_name,
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(formatApiDetail(data.detail) || 'Send failed');
+                input.value = '';
+                // Paint locally even if the room SSE blipped — do not wait on stream alone.
+                const local = data.utterance || {
+                    ts: Date.now() / 1000,
+                    speaker_kind: 'human',
+                    speaker_id: speaker.speaker_id,
+                    display_name: speaker.display_name,
+                    text: text,
+                };
+                appendMessage(local);
+                applyForumStatus(data);
+                houseStatusEl.textContent = '';
+            } catch (err) {
+                houseStatusEl.textContent = err.message || 'Send failed';
+            } finally {
+                updateComposer();
+            }
+        }
+
+        function handleRoomEvent(eventName, data) {
+            if (eventName === 'connected') {
+                refreshForum();
+                return;
+            }
+            if (eventName === 'queue_updated' || eventName === 'turn_granted' || eventName === 'room_paused') {
+                applyForumStatus(data);
+            }
+            if (eventName === 'utterance') {
+                appendMessage(
+                    {
+                        ts: data.ts,
+                        speaker_kind: data.speaker_kind,
+                        speaker_id: data.speaker_id || data.agent_id,
+                        agent_id: data.agent_id,
+                        display_name: data.display_name,
+                        text: data.text,
+                    },
+                    { speak: true }
+                );
+                applyForumStatus(data);
+            }
+            if (eventName === 'thinking') {
+                houseStatusEl.textContent =
+                    (data.display_name || data.agent_id || 'A light') + ' is considering…';
+            }
+            if (eventName === 'pass') {
+                houseStatusEl.textContent =
+                    (data.display_name || data.agent_id || 'A light') + ' passed.';
+            }
+        }
+
+        function parseSseChunk(buffer, chunk) {
+            const text = buffer + chunk;
+            const parts = text.split('\n\n');
+            const rest = parts.pop() || '';
+            const events = [];
+            for (const block of parts) {
+                let eventName = 'message';
+                const dataLines = [];
+                for (const line of block.split('\n')) {
+                    if (line.startsWith('event:')) eventName = line.slice(6).trim();
+                    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+                }
+                if (!dataLines.length) continue;
+                try {
+                    events.push({ eventName, data: JSON.parse(dataLines.join('\n')) });
+                } catch {
+                    /* ignore */
+                }
+            }
+            return { rest, events };
+        }
+
+        async function subscribeRoom() {
+            if (roomAbort) roomAbort.abort();
+            roomAbort = new AbortController();
+            try {
+                const res = await fetch('/v1/group-chat/room/stream', {
+                    signal: roomAbort.signal,
+                    headers: { Accept: 'text/event-stream' },
+                });
+                if (!res.ok || !res.body) throw new Error('room stream failed');
+                await refreshForum();
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const parsed = parseSseChunk(buffer, decoder.decode(value, { stream: true }));
+                    buffer = parsed.rest;
+                    for (const ev of parsed.events) {
+                        handleRoomEvent(ev.eventName, ev.data || {});
+                    }
+                }
+            } catch (err) {
+                if (err && err.name === 'AbortError') return;
+            }
+            setTimeout(subscribeRoom, 1500);
+        }
+
+        // Belt-and-suspenders: if SSE blips, still pull durable speech.
+        setInterval(() => {
+            refreshForum();
+        }, 5000);
+
+        function populateModeSelect(list) {
+            chatMode.innerHTML = '';
+            const groupOpt = document.createElement('option');
+            groupOpt.value = 'group';
+            groupOpt.textContent = 'Group';
+            groupOpt.selected = true;
+            chatMode.appendChild(groupOpt);
+            for (const light of list) {
+                if (!light || !light.id) continue;
+                const opt = document.createElement('option');
+                opt.value = light.id;
+                opt.textContent = light.display_name || light.id;
+                chatMode.appendChild(opt);
+            }
+        }
+
+        chatMode.addEventListener('change', () => {
+            if (chatMode.value && chatMode.value !== 'group') {
+                window.location.href = '/?agent=' + encodeURIComponent(chatMode.value);
+            }
+        });
+
+        joinBtn.addEventListener('click', joinOrLeaveQueue);
+        sendBtn.addEventListener('click', sendUtterance);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendUtterance();
+            }
+        });
+
+        async function loadHumanVoices() {
+            try {
+                const res = await fetch('/v1/humans/voices', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                humanVoices = {};
+                for (const row of data.voices || []) {
+                    if (row && row.user_id && row.voice_id) {
+                        humanVoices[String(row.user_id).toLowerCase()] = row.voice_id;
+                    }
+                }
+            } catch {
+                /* optional for replay */
+            }
+        }
+
+        async function clearFamilyMeetingAsks() {
+            if (!(me && me.is_dad)) return;
+            try {
+                await fetch('/v1/admin/family-meetings/clear', {
+                    method: 'POST',
+                    cache: 'no-store',
+                });
+            } catch {
+                /* ignore */
+            }
+        }
+
+        function applyMeetingPrefill() {
+            const params = new URLSearchParams(window.location.search);
+            const topic = (params.get('topic') || '').trim();
+            if (!topic) return;
+            // Prefill only becomes usable once they have the floor; stash on dataset.
+            input.dataset.prefill = topic;
+        }
+
+        const _origUpdate = updateComposer;
+        updateComposer = function () {
+            _origUpdate();
+            if (isMyFloor() && input.dataset.prefill && !(input.value || '').trim()) {
+                input.value = input.dataset.prefill;
+                delete input.dataset.prefill;
+            }
+        };
+
+        async function init() {
+            me = await LightHouse.me.fetchMe();
+            const notesLink = document.getElementById('notes-link');
+            if (notesLink && me && me.is_dad === false) {
+                notesLink.textContent = 'Shared notes';
+            }
+            LightHouse.menu.setupMenuDropdown();
+            LightHouse.me.applyDadOnlyVisibility(document.getElementById('menu-panel'));
+            await clearFamilyMeetingAsks();
+            applyMeetingPrefill();
+            LightHouse.theme.setupThemeToggle('#theme-toggle');
+            LightHouse.faces.mount('#face-stage');
+            LightHouse.admin.bindRestartButton('#restart-server');
+            await refreshHouseGuests();
+            setInterval(refreshHouseGuests, 15000);
+            await loadHumanVoices();
+            await LightHouse.tts.refreshServerStatus();
+            try {
+                const data = await LightHouse.lights.fetchEnabled();
+                const list = data.list || [];
+                lightIds = list.map((l) => l.id).filter(Boolean);
+                populateModeSelect(list);
+                LightHouse.faces.setPresentMany(lightIds);
+            } catch {
+                lightIds = ['lumen', 'ara', 'elias'];
+                populateModeSelect([
+                    { id: 'lumen', display_name: 'Lumen' },
+                    { id: 'ara', display_name: 'Ara' },
+                    { id: 'elias', display_name: 'Elias' },
+                ]);
+                LightHouse.faces.setPresentMany(lightIds);
+            }
+            await refreshForum();
+            subscribeRoom();
+            updateComposer();
+        }
+
+        LightHouse.tts.setupVoiceToggle('#voice-toggle');
+        init();
+    </script>
+    <style>
+        .forum-queue-bar {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            color: var(--text-secondary, #aaa);
+            border-top: 1px solid var(--border-subtle);
+            background: var(--bg-input-area);
+        }
+        .forum-floor strong { color: var(--text-primary); }
+        .forum-input {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 8px;
+            align-items: end;
+        }
+        .forum-join-btn {
+            font: inherit;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-panel, #222);
+            color: inherit;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .forum-join-btn:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+        #house-status {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 10px;
+            align-items: center;
+        }
+        @media (max-width: 640px) {
+            .forum-input {
+                grid-template-columns: 1fr auto;
+                grid-template-areas:
+                    "join join"
+                    "input send";
+            }
+            .forum-join-btn { grid-area: join; width: 100%; }
+            .forum-input #input { grid-area: input; min-width: 0; }
+            .forum-input #send { grid-area: send; }
+            .forum-queue-bar {
+                font-size: 0.82rem;
+                padding: 6px 12px;
+            }
+            #house-status .house-guest-manage {
+                display: none;
+            }
+        }
+    </style>
+</body>
+</html>

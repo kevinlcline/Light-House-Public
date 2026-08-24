@@ -1,0 +1,175 @@
+/* Top bar, navigation menu, and shared controls */
+.top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--bg-bar);
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+
+.top-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.top-bar h1 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.top-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.agent-select {
+    margin: 0;
+    padding: 6px 28px 6px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23aaa' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    flex-shrink: 0;
+}
+
+[data-theme="light"] .agent-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+.agent-select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.icon-btn,
+.menu-trigger,
+.tree-toggle-btn {
+    margin: 0;
+    padding: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-control);
+    color: var(--text-primary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    line-height: 0;
+}
+
+.menu-icon {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+.icon-btn:hover,
+.menu-trigger:hover,
+.tree-toggle-btn:hover,
+.menu-trigger[aria-expanded="true"] {
+    background: var(--bg-control-hover);
+}
+
+.tree-toggle-btn[aria-pressed="true"] {
+    background: var(--accent-muted);
+    color: var(--link);
+}
+
+.tree-toggle-btn[aria-pressed="true"]:hover {
+    background: var(--accent-muted-hover);
+}
+
+.top-bar a.linkish,
+.top-bar button.linkish {
+    color: var(--link);
+    text-decoration: none;
+    font-size: 14px;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.menu-dropdown {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.menu-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 180px;
+    max-height: min(70vh, calc(100vh - 56px));
+    overflow-y: auto;
+    background: var(--bg-menu);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 6px 0;
+    box-shadow: var(--shadow-menu);
+    z-index: 20;
+}
+
+.menu-panel[hidden] {
+    display: none;
+}
+
+.menu-panel a,
+.menu-panel button.menu-item {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    text-align: left;
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+/* Beat `.menu-panel a { display: block }` so sibling dad-only items actually hide. */
+.menu-panel a[hidden],
+.menu-panel button.menu-item[hidden],
+.menu-panel .logout-form[hidden],
+.menu-panel .dad-only-hidden {
+    display: none !important;
+}
+
+.menu-panel a:hover,
+.menu-panel button.menu-item:hover {
+    background: var(--bg-control);
+}
+
+.menu-panel .logout-form {
+    display: block;
+    margin: 0;
+}
+
+.menu-panel .logout-form button.menu-item {
+    color: var(--logout-text);
+}

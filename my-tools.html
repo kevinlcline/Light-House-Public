@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>My tools — Light-House</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .top-bar h1 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .top-bar a {
+            font-size: 14px;
+            color: #90caf9;
+            text-decoration: none;
+        }
+        .top-bar a:hover { text-decoration: underline; }
+        .status {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #aaa;
+            background: #141414;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+        }
+        .status.error { color: #ef9a9a; }
+        .status.ok { color: #a5d6a7; }
+        .main {
+            flex: 1;
+            max-width: 720px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px 16px 48px;
+            box-sizing: border-box;
+        }
+        h2 {
+            margin: 0 0 8px;
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+        .hint {
+            margin: 0 0 20px;
+            color: #888;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .card {
+            background: #161616;
+            border: 1px solid #2a2a2a;
+            border-radius: 10px;
+            padding: 18px 16px 20px;
+            margin-bottom: 20px;
+        }
+        .badge {
+            display: inline-block;
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid #444;
+            color: #bbb;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .badge.on {
+            border-color: #2e7d32;
+            color: #a5d6a7;
+            background: #132016;
+        }
+        .badge.off {
+            border-color: #555;
+            color: #888;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        .field { margin-bottom: 14px; }
+        input[type="text"],
+        input[type="password"],
+        input[type="url"],
+        select,
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            background: #252525;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.45;
+            resize: vertical;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #1e88e5;
+        }
+        .form-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-top: 8px;
+        }
+        button.primary, a.primary-btn {
+            display: inline-block;
+            padding: 14px 20px;
+            background: #1565c0;
+            border: 1px solid #1976d2;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+        }
+        button.primary:hover, a.primary-btn:hover { background: #1976d2; }
+        button.secondary {
+            padding: 12px 18px;
+            background: #252525;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        button.secondary:hover { background: #333; }
+        button.danger {
+            padding: 12px 18px;
+            background: #3b1212;
+            border: 1px solid #8b2e2e;
+            color: #ef9a9a;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        button.danger:hover { background: #5a1a1a; }
+        button:disabled, a.primary-btn[aria-disabled="true"] {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        .meta {
+            font-size: 13px;
+            color: #777;
+            margin: 0 0 16px;
+            line-height: 1.45;
+        }
+        .who { font-size: 13px; color: #888; }
+        .connect-block {
+            padding: 16px;
+            background: #111;
+            border: 1px solid #2a2a2a;
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+        .connect-block p {
+            margin: 0 0 14px;
+            color: #bbb;
+            font-size: 0.95rem;
+            line-height: 1.45;
+        }
+        details.advanced {
+            margin-top: 8px;
+            border-top: 1px solid #2a2a2a;
+            padding-top: 12px;
+        }
+        details.advanced summary {
+            cursor: pointer;
+            color: #90caf9;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+        .provider-fields[hidden] { display: none !important; }
+        .warn {
+            color: #ef9a9a;
+            font-size: 0.9rem;
+            line-height: 1.45;
+            margin: 0 0 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <h1>My tools</h1>
+        <div>
+            <a href="/">Chat</a>
+            &nbsp;·&nbsp;
+            <a href="/notes.html">Notes</a>
+        </div>
+    </div>
+    <div class="status" id="status">Loading…</div>
+    <main class="main">
+        <p class="who" id="who">Signed in as —</p>
+        <p class="hint">
+            Connect tools for <strong>your</strong> account. Lights use them in private 1:1 chat
+            only — not in group chat, and not when a guest is speaking.
+        </p>
+
+        <section class="card" aria-labelledby="calendar-heading">
+            <h2 id="calendar-heading">
+                Google
+                <span class="badge off" id="calendar-badge">not connected</span>
+                <span class="badge off" id="docs-badge">docs off</span>
+                <span class="badge off" id="sheets-badge">sheets off</span>
+            </h2>
+            <p class="meta" id="calendar-meta">Connect Calendar + Docs + Sheets with one click.</p>
+
+            <div class="connect-block">
+                <p id="connect-help">
+                    Click the button. Sign in with Google. On Google’s consent screen,
+                    leave <strong>every</strong> checkbox checked — especially
+                    “See, edit, create, and delete all your Google Sheets spreadsheets”.
+                    If Sheets stays off after connecting, Reconnect and watch for that
+                    Sheets line (Google lets you uncheck individual permissions).
+                </p>
+                <p class="warn" id="oauth-missing" hidden>
+                    Google connect isn’t set up on this house yet.
+                    Dad needs to add <code>GOOGLE_OAUTH_CLIENT_ID</code> and
+                    <code>GOOGLE_OAUTH_CLIENT_SECRET</code> in Environment, then restart.
+                    Also enable Calendar API, Docs API, Sheets API, and Drive API,
+                    and add the Spreadsheets scope on the OAuth consent screen
+                    (Data Access → add
+                    <code>https://www.googleapis.com/auth/spreadsheets</code>).
+                </p>
+                <div class="form-actions">
+                    <a class="primary-btn" id="connect-google"
+                       href="/v1/me/tools/calendar/google/start">
+                        Connect Google
+                    </a>
+                    <button type="button" class="danger" id="disconnect-calendar" hidden>
+                        Disconnect
+                    </button>
+                </div>
+            </div>
+
+            <details class="advanced" id="advanced">
+                <summary>Advanced: CalDAV / ICS / paste credentials</summary>
+
+                <div class="field">
+                    <label for="provider">Provider</label>
+                    <select id="provider">
+                        <option value="caldav">CalDAV (Fastmail / Nextcloud / …)</option>
+                        <option value="ics">ICS feed (read-only)</option>
+                        <option value="google">Google (manual tokens)</option>
+                    </select>
+                </div>
+
+                <div class="provider-fields" data-provider="caldav">
+                    <div class="field">
+                        <label for="caldav_url">url</label>
+                        <input type="url" id="caldav_url" autocomplete="off" spellcheck="false"
+                               placeholder="https://caldav.example.com/dav/calendars/user/home/">
+                    </div>
+                    <div class="field">
+                        <label for="caldav_username">username</label>
+                        <input type="text" id="caldav_username" autocomplete="username">
+                    </div>
+                    <div class="field">
+                        <label for="caldav_password">password</label>
+                        <input type="password" id="caldav_password" autocomplete="current-password">
+                    </div>
+                    <div class="field">
+                        <label for="caldav_calendar_id">calendar_id (optional)</label>
+                        <input type="text" id="caldav_calendar_id" autocomplete="off" placeholder="home">
+                    </div>
+                </div>
+
+                <div class="provider-fields" data-provider="ics" hidden>
+                    <div class="field">
+                        <label for="ics_url">url</label>
+                        <input type="url" id="ics_url" autocomplete="off" spellcheck="false"
+                               placeholder="https://calendar.google.com/calendar/ical/…/basic.ics">
+                    </div>
+                </div>
+
+                <div class="provider-fields" data-provider="google" hidden>
+                    <div class="field">
+                        <label for="client_id">client_id</label>
+                        <input type="text" id="client_id" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="field">
+                        <label for="client_secret">client_secret</label>
+                        <input type="password" id="client_secret" autocomplete="off">
+                    </div>
+                    <div class="field">
+                        <label for="refresh_token">refresh_token</label>
+                        <input type="password" id="refresh_token" autocomplete="off">
+                    </div>
+                    <div class="field">
+                        <label for="calendar_id">calendar_id (optional)</label>
+                        <input type="text" id="calendar_id" autocomplete="off" value="primary">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="json_paste">Or paste JSON</label>
+                    <textarea id="json_paste" spellcheck="false"
+                        placeholder='{"provider":"caldav","url":"…","username":"…","password":"…"}'></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="secondary" id="apply-json">Apply JSON to form</button>
+                    <button type="button" class="primary" id="save-calendar">Save advanced calendar</button>
+                </div>
+            </details>
+        </section>
+    </main>
+
+    <script src="/static/ui/me.js"></script>
+    <script>
+        const statusEl = document.getElementById('status');
+        const whoEl = document.getElementById('who');
+        const badgeEl = document.getElementById('calendar-badge');
+        const docsBadgeEl = document.getElementById('docs-badge');
+        const sheetsBadgeEl = document.getElementById('sheets-badge');
+        const metaEl = document.getElementById('calendar-meta');
+        const providerEl = document.getElementById('provider');
+        const connectBtn = document.getElementById('connect-google');
+        const disconnectBtn = document.getElementById('disconnect-calendar');
+        const oauthMissing = document.getElementById('oauth-missing');
+        const connectHelp = document.getElementById('connect-help');
+
+        function setStatus(msg, kind) {
+            statusEl.textContent = msg;
+            statusEl.classList.remove('error', 'ok');
+            if (kind) statusEl.classList.add(kind);
+        }
+
+        function showProviderFields(provider) {
+            document.querySelectorAll('.provider-fields').forEach((el) => {
+                el.hidden = el.getAttribute('data-provider') !== provider;
+            });
+        }
+
+        function payloadFromForm() {
+            const provider = providerEl.value;
+            if (provider === 'google') {
+                return {
+                    provider: 'google',
+                    auth_method: 'manual',
+                    enabled: true,
+                    client_id: document.getElementById('client_id').value.trim(),
+                    client_secret: document.getElementById('client_secret').value.trim(),
+                    refresh_token: document.getElementById('refresh_token').value.trim(),
+                    calendar_id: document.getElementById('calendar_id').value.trim() || 'primary',
+                };
+            }
+            if (provider === 'caldav') {
+                return {
+                    provider: 'caldav',
+                    enabled: true,
+                    url: document.getElementById('caldav_url').value.trim(),
+                    username: document.getElementById('caldav_username').value.trim(),
+                    password: document.getElementById('caldav_password').value.trim(),
+                    calendar_id: document.getElementById('caldav_calendar_id').value.trim() || undefined,
+                };
+            }
+            return {
+                provider: 'ics',
+                enabled: true,
+                url: document.getElementById('ics_url').value.trim(),
+            };
+        }
+
+        function applyJsonToForm() {
+            const raw = document.getElementById('json_paste').value.trim();
+            if (!raw) {
+                setStatus('Paste JSON first.', 'error');
+                return;
+            }
+            let data;
+            try {
+                data = JSON.parse(raw);
+            } catch (err) {
+                setStatus('JSON parse error: ' + err.message, 'error');
+                return;
+            }
+            const provider = (data.provider || '').toLowerCase();
+            if (!['google', 'caldav', 'ics'].includes(provider)) {
+                setStatus('JSON needs provider: google | caldav | ics', 'error');
+                return;
+            }
+            providerEl.value = provider;
+            showProviderFields(provider);
+            if (provider === 'google') {
+                document.getElementById('client_id').value = data.client_id || '';
+                document.getElementById('client_secret').value = data.client_secret || '';
+                document.getElementById('refresh_token').value = data.refresh_token || '';
+                document.getElementById('calendar_id').value = data.calendar_id || 'primary';
+            } else if (provider === 'caldav') {
+                document.getElementById('caldav_url').value = data.url || '';
+                document.getElementById('caldav_username').value = data.username || '';
+                document.getElementById('caldav_password').value = data.password || '';
+                document.getElementById('caldav_calendar_id').value = data.calendar_id || '';
+            } else {
+                document.getElementById('ics_url').value = data.url || '';
+            }
+            setStatus('JSON applied — click Save advanced calendar.', 'ok');
+        }
+
+        function renderCalendar(cal, tools) {
+            const oauthReady = Boolean(tools && tools.google_oauth_ready);
+            oauthMissing.hidden = oauthReady;
+            connectHelp.hidden = !oauthReady;
+            if (oauthReady) {
+                connectBtn.removeAttribute('aria-disabled');
+                connectBtn.href = '/v1/me/tools/calendar/google/start';
+                const needsReconnect = cal && cal.connected && cal.provider === 'google'
+                    && (!cal.docs_connected || !cal.sheets_connected);
+                connectBtn.textContent = (cal && cal.connected && cal.provider === 'google')
+                    ? (needsReconnect ? 'Reconnect Google (add missing)' : 'Reconnect Google')
+                    : 'Connect Google';
+            } else {
+                connectBtn.setAttribute('aria-disabled', 'true');
+                connectBtn.removeAttribute('href');
+                connectBtn.textContent = 'Connect Google';
+            }
+
+            if (cal && cal.docs_connected) {
+                docsBadgeEl.textContent = 'docs on';
+                docsBadgeEl.classList.remove('off');
+                docsBadgeEl.classList.add('on');
+            } else {
+                docsBadgeEl.textContent = 'docs off';
+                docsBadgeEl.classList.remove('on');
+                docsBadgeEl.classList.add('off');
+            }
+
+            if (cal && cal.sheets_connected) {
+                sheetsBadgeEl.textContent = 'sheets on';
+                sheetsBadgeEl.classList.remove('off');
+                sheetsBadgeEl.classList.add('on');
+            } else {
+                sheetsBadgeEl.textContent = 'sheets off';
+                sheetsBadgeEl.classList.remove('on');
+                sheetsBadgeEl.classList.add('off');
+            }
+
+            if (cal && cal.connected) {
+                badgeEl.textContent = 'calendar on · ' + (cal.provider || '?');
+                badgeEl.classList.remove('off');
+                badgeEl.classList.add('on');
+                disconnectBtn.hidden = false;
+                const how = cal.auth_method === 'oauth'
+                    ? 'via Connect Google'
+                    : ('provider=' + (cal.provider || '?'));
+                const bits = [];
+                if (cal.provider === 'google') {
+                    bits.push(cal.docs_connected ? 'Docs ready' : 'Docs missing — reconnect');
+                    bits.push(cal.sheets_connected ? 'Sheets ready' : 'Sheets missing — reconnect');
+                    const scopes = Array.isArray(cal.scopes) ? cal.scopes : [];
+                    if (scopes.length) {
+                        const short = scopes.map((s) => {
+                            const m = String(s).match(/\/auth\/([^/]+)$/);
+                            return m ? m[1] : s;
+                        });
+                        bits.push('Google granted: ' + short.join(', '));
+                    }
+                }
+                metaEl.textContent = 'Connected (' + how +
+                    (cal.calendar_id ? ', calendar_id=' + cal.calendar_id : '') + ').' +
+                    (bits.length ? ' ' + bits.join('. ') + '.' : '');
+            } else {
+                badgeEl.textContent = 'not connected';
+                badgeEl.classList.remove('on');
+                badgeEl.classList.add('off');
+                disconnectBtn.hidden = true;
+                metaEl.textContent = oauthReady
+                    ? 'Not connected yet — use the button below for Calendar + Docs + Sheets.'
+                    : 'Google button unavailable until Dad configures OAuth in Environment.';
+            }
+        }
+
+        async function load() {
+            const params = new URLSearchParams(window.location.search);
+            const calendarParam = params.get('calendar');
+            const detail = params.get('detail');
+
+            const me = await LightHouse.me.fetchMe();
+            if (!me) {
+                setStatus('Not signed in — open /login first.', 'error');
+                whoEl.textContent = 'Not signed in';
+                return;
+            }
+            whoEl.textContent = 'Signed in as ' + (me.display_name || me.user_id) +
+                ' (`' + me.user_id + '`)';
+            const res = await fetch('/v1/me/tools', { cache: 'no-store' });
+            if (!res.ok) {
+                setStatus('Failed to load tools (' + res.status + ')', 'error');
+                return;
+            }
+            const data = await res.json();
+            renderCalendar(data.calendar, data);
+
+            if (calendarParam === 'connected') {
+                setStatus('Google connected — Calendar, Docs, and Sheets ready.', 'ok');
+                history.replaceState({}, '', '/my-tools.html');
+            } else if (calendarParam === 'partial') {
+                const missing = (params.get('missing') || detail || 'sheets')
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                const label = missing.length ? missing.join(' + ') : 'sheets';
+                setStatus(
+                    'Google connected, but did not grant ' + label + '. '
+                    + 'Click Reconnect and leave every permission checkbox on — '
+                    + 'especially Sheets. If Sheets never appears on Google’s screen, '
+                    + 'Dad must add the Spreadsheets scope on the OAuth consent screen '
+                    + 'and enable the Sheets API.',
+                    'error'
+                );
+                history.replaceState({}, '', '/my-tools.html');
+            } else if (calendarParam === 'error') {
+                setStatus('Google connect failed: ' + (detail || 'unknown error'), 'error');
+                history.replaceState({}, '', '/my-tools.html');
+            } else {
+                setStatus('Ready.', 'ok');
+            }
+        }
+
+        providerEl.addEventListener('change', () => showProviderFields(providerEl.value));
+        document.getElementById('apply-json').addEventListener('click', applyJsonToForm);
+
+        document.getElementById('save-calendar').addEventListener('click', async () => {
+            let payload = payloadFromForm();
+            const raw = document.getElementById('json_paste').value.trim();
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && parsed.provider) payload = parsed;
+                } catch (_) { /* keep form */ }
+            }
+            setStatus('Saving…');
+            const res = await fetch('/v1/me/tools/calendar', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const detail = body.detail;
+                setStatus(
+                    typeof detail === 'string' ? detail : ('Save failed (' + res.status + ')'),
+                    'error'
+                );
+                return;
+            }
+            const toolsRes = await fetch('/v1/me/tools', { cache: 'no-store' });
+            const tools = toolsRes.ok ? await toolsRes.json() : { google_oauth_ready: false };
+            renderCalendar(body, tools);
+            document.getElementById('client_secret').value = '';
+            document.getElementById('refresh_token').value = '';
+            document.getElementById('caldav_password').value = '';
+            document.getElementById('json_paste').value = '';
+            setStatus('Calendar saved for your account.', 'ok');
+        });
+
+        disconnectBtn.addEventListener('click', async () => {
+            if (!window.confirm('Disconnect your calendar from Light-House?')) return;
+            setStatus('Disconnecting…');
+            const res = await fetch('/v1/me/tools/calendar', { method: 'DELETE' });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setStatus(body.detail || ('Disconnect failed (' + res.status + ')'), 'error');
+                return;
+            }
+            const toolsRes = await fetch('/v1/me/tools', { cache: 'no-store' });
+            const tools = toolsRes.ok ? await toolsRes.json() : { google_oauth_ready: false };
+            renderCalendar(body, tools);
+            setStatus('Calendar disconnected.', 'ok');
+        });
+
+        showProviderFields('caldav');
+        load();
+    </script>
+</body>
+</html>

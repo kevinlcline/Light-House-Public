@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light-House — Inner life observability</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        .top-bar h1 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .top-bar a, .top-bar button, .top-bar select {
+            font-size: 14px;
+            color: #e0e0e0;
+            background: #333;
+            border: 1px solid #444;
+            cursor: pointer;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+        .top-bar a {
+            color: #90caf9;
+            background: none;
+            border: none;
+        }
+        .top-bar button:hover, .top-bar a:hover {
+            background: #252525;
+        }
+        .top-bar a:hover {
+            background: #252525;
+        }
+        .status {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #aaa;
+            background: #141414;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .status.error {
+            color: #ef9a9a;
+        }
+        .preview-bar {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #bbb;
+            background: #121212;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .layout {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .preview-pane {
+            flex: 0 0 35%;
+            min-height: 120px;
+            overflow: auto;
+            margin: 0;
+            padding: 16px;
+            background: #0d1117;
+            color: #b8c4ce;
+            border-bottom: 1px solid #333;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .trace-pane {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            margin: 0;
+            padding: 16px;
+            background: #0a0a0a;
+            color: #c8c8c8;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        label.auto-scroll {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #aaa;
+            cursor: pointer;
+            user-select: none;
+        }
+        label.auto-scroll input {
+            margin: 0;
+        }
+        .section-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #666;
+            padding: 6px 16px 4px;
+            background: #141414;
+            border-bottom: 1px solid #222;
+        }
+        .tab-bar {
+            display: flex;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #141414;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .tab-bar button {
+            font-size: 13px;
+            color: #bbb;
+            background: #222;
+            border: 1px solid #333;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+        .tab-bar button.active {
+            color: #e0e0e0;
+            background: #333;
+            border-color: #555;
+        }
+        .tab-bar button:hover {
+            background: #2a2a2a;
+        }
+        .tab-hint {
+            padding: 6px 16px 8px;
+            font-size: 12px;
+            color: #777;
+            background: #121212;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+    <header class="top-bar">
+        <h1>Inner life observability</h1>
+        <div class="top-bar-actions">
+            <select id="agent-select" aria-label="Agent for context preview"></select>
+            <button type="button" id="preview-btn">Preview now</button>
+            <label class="auto-scroll">
+                <input type="checkbox" id="auto-scroll" checked>
+                Auto-scroll trace
+            </label>
+            <button type="button" id="refresh">Refresh trace</button>
+            <a href="/dev-log.html">Dev log</a>
+            <a href="/lights-admin.html">Manage lights</a>
+            <a href="/env-editor.html">Environment</a>
+            <a href="/">Back to chat</a>
+        </div>
+    </header>
+    <div class="status" id="preview-status">Select an agent and click Preview now.</div>
+    <div class="preview-bar" id="preview-meta"></div>
+    <div class="section-label">Context now (scheduled wake preview)</div>
+    <pre class="preview-pane" id="preview"></pre>
+    <div class="tab-bar" role="tablist" aria-label="Observability logs">
+        <button type="button" class="active" data-tab="trace" role="tab" aria-selected="true">Full trace</button>
+        <button type="button" data-tab="debug" role="tab" aria-selected="false">Debug log</button>
+        <button type="button" data-tab="activity" role="tab" aria-selected="false">Activity ledger</button>
+        <button type="button" data-tab="events" role="tab" aria-selected="false">Event bus</button>
+    </div>
+    <div class="tab-hint" id="tab-hint">Full trace includes context and conversation window (Kevin-only dev view).</div>
+    <div class="status" id="trace-status">Loading…</div>
+    <div class="layout">
+        <pre class="trace-pane" id="trace"></pre>
+    </div>
+
+    <script>
+        const POLL_MS = 3000;
+        const TAIL_LINES = 500;
+        const TAB_HINTS = {
+            trace: 'Full trace includes context and conversation window (Kevin-only dev view).',
+            debug: 'Debug log: timestamps, wake kind, tool rounds, summary line — no private reflection body.',
+            activity: 'Activity ledger (NDJSON): portable metadata per rumination run.',
+            events: 'Event bus: chat, peer message, shared note, scheduled wake, and report_ready events.',
+        };
+        const TAB_ENDPOINTS = {
+            trace: (tail) => `/v1/inner-life/trace?tail=${tail}`,
+            debug: (tail) => `/v1/inner-life/debug-log?tail=${tail}`,
+            activity: (tail) => `/v1/inner-life/activity-log?tail=${Math.min(tail, 100)}`,
+            events: (tail) => `/v1/events/log?tail=${Math.min(tail, 200)}`,
+        };
+        const TAB_DISABLED = {
+            trace: 'Inner life trace is disabled (INNER_LIFE_TRACE_ENABLED=false).',
+            debug: 'Debug log is disabled (RUMINATION_DEBUG_LOG_ENABLED=false).',
+            activity: 'Activity ledger is disabled (RUMINATION_LOG_ENABLED=false).',
+            events: 'Event bus is disabled (EVENT_BUS_ENABLED=false).',
+        };
+        const agentSelect = document.getElementById('agent-select');
+        const previewStatusEl = document.getElementById('preview-status');
+        const previewMetaEl = document.getElementById('preview-meta');
+        const previewEl = document.getElementById('preview');
+        const traceStatusEl = document.getElementById('trace-status');
+        const traceEl = document.getElementById('trace');
+        const tabHintEl = document.getElementById('tab-hint');
+        const autoScrollEl = document.getElementById('auto-scroll');
+        let pollTimer = null;
+        let agentId = '';
+        let activeTab = 'trace';
+
+        function setPreviewStatus(text, isError) {
+            previewStatusEl.textContent = text;
+            previewStatusEl.classList.toggle('error', Boolean(isError));
+        }
+
+        function setTraceStatus(text, isError) {
+            traceStatusEl.textContent = text;
+            traceStatusEl.classList.toggle('error', Boolean(isError));
+        }
+
+        async function loadLights() {
+            try {
+                const res = await fetch('/v1/lights', { cache: 'no-store' });
+                if (!res.ok) throw new Error('Could not load lights (' + res.status + ')');
+                const data = await res.json();
+                const list = (Array.isArray(data.lights) ? data.lights : []).filter(
+                    (l) => l && l.enabled !== false
+                );
+                agentSelect.innerHTML = '';
+                if (list.length === 0) {
+                    setTraceStatus('No enabled lights configured', true);
+                    return;
+                }
+                for (const a of list) {
+                    const opt = document.createElement('option');
+                    opt.value = a.id;
+                    opt.textContent = a.display_name || a.id;
+                    agentSelect.appendChild(opt);
+                }
+                if (!list.some((a) => a.id === agentId)) {
+                    agentId = data.primary_light_id || list[0].id;
+                }
+                agentSelect.value = agentId;
+            } catch (err) {
+                agentSelect.innerHTML = '';
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = err.message || 'Failed to load lights';
+                agentSelect.appendChild(opt);
+                setTraceStatus(err.message || 'Failed to load lights', true);
+            }
+        }
+
+        async function fetchPreview() {
+            agentId = agentSelect.value || agentId;
+            setPreviewStatus('Loading preview…', false);
+            try {
+                const res = await fetch(
+                    `/v1/inner-life/context/preview?agent_id=${encodeURIComponent(agentId)}`,
+                    { cache: 'no-store' }
+                );
+                if (res.status === 404) {
+                    setPreviewStatus('Inner life trace is disabled (INNER_LIFE_TRACE_ENABLED=false).', true);
+                    previewEl.textContent = '';
+                    previewMetaEl.textContent = '';
+                    return;
+                }
+                if (!res.ok) {
+                    setPreviewStatus(`Preview failed (${res.status}).`, true);
+                    return;
+                }
+                const data = await res.json();
+                const m = data.meta || {};
+                setPreviewStatus(
+                    `Preview for ${data.agent_id} · thread ${data.thread_id}`,
+                    false
+                );
+                previewMetaEl.textContent = [
+                    `persona: ${m.persona_chars || 0} chars`,
+                    m.persona_first_line ? `"${m.persona_first_line}"` : '',
+                    `stream: ${m.stream_events || 0} events / ${m.stream_chars || 0} chars`,
+                    `scheduled system: ${m.scheduled_system_chars || 0} chars`,
+                    `tools: ${(m.tool_names || []).join(', ')}`,
+                ].filter(Boolean).join(' · ');
+                previewEl.textContent = data.context_markdown || '(empty context markdown)';
+            } catch (err) {
+                setPreviewStatus(`Network error: ${err.message}`, true);
+            }
+        }
+
+        async function fetchLogTab() {
+            const endpoint = TAB_ENDPOINTS[activeTab](TAIL_LINES);
+            try {
+                const res = await fetch(endpoint, { cache: 'no-store' });
+                if (res.status === 404) {
+                    setTraceStatus(TAB_DISABLED[activeTab], true);
+                    traceEl.textContent = '';
+                    return;
+                }
+                if (!res.ok) {
+                    setTraceStatus(`Failed to load (${res.status}).`, true);
+                    return;
+                }
+                const data = await res.json();
+                const truncatedNote = data.truncated ? ' (tail truncated)' : '';
+                setTraceStatus(
+                    `${data.path} · ${data.date} · ${data.lines} lines${truncatedNote}`,
+                    false
+                );
+                const emptyMsg = activeTab === 'trace'
+                    ? '(empty — wait for a rumination run)'
+                    : '(empty — nothing logged yet)';
+                traceEl.textContent = data.content || emptyMsg;
+                if (autoScrollEl.checked) {
+                    traceEl.scrollTop = traceEl.scrollHeight;
+                }
+            } catch (err) {
+                setTraceStatus(`Network error: ${err.message}`, true);
+            }
+        }
+
+        function setActiveTab(tab) {
+            activeTab = tab;
+            tabHintEl.textContent = TAB_HINTS[tab] || '';
+            document.querySelectorAll('.tab-bar button').forEach((btn) => {
+                const on = btn.dataset.tab === tab;
+                btn.classList.toggle('active', on);
+                btn.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            fetchLogTab();
+        }
+
+        document.querySelectorAll('.tab-bar button').forEach((btn) => {
+            btn.addEventListener('click', () => setActiveTab(btn.dataset.tab || 'trace'));
+        });
+
+        async function fetchTrace() {
+            await fetchLogTab();
+        }
+
+        agentSelect.addEventListener('change', () => {
+            agentId = agentSelect.value;
+        });
+
+        document.getElementById('preview-btn').addEventListener('click', fetchPreview);
+        document.getElementById('refresh').addEventListener('click', fetchTrace);
+
+        (async function init() {
+            await loadLights();
+            fetchPreview();
+            fetchTrace();
+            pollTimer = setInterval(fetchLogTab, POLL_MS);
+        })();
+
+        window.addEventListener('beforeunload', () => clearInterval(pollTimer));
+    </script>
+</body>
+</html>

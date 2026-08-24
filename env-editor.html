@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light-House — Environment</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .top-bar h1 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .top-bar a, .top-bar button {
+            font-size: 14px;
+            color: #e0e0e0;
+            background: #333;
+            border: 1px solid #444;
+            cursor: pointer;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+        .top-bar a.link {
+            color: #90caf9;
+            background: none;
+            border: none;
+        }
+        .top-bar button.primary {
+            background: #1565c0;
+            border-color: #1976d2;
+            color: #fff;
+        }
+        .top-bar button.danger {
+            background: #8b1a1a;
+            border-color: #b71c1c;
+            color: #fff;
+        }
+        .top-bar button:hover, .top-bar a:hover {
+            filter: brightness(1.1);
+        }
+        .top-bar a.link:hover {
+            background: #252525;
+            filter: none;
+        }
+        .status {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #aaa;
+            background: #141414;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+        .status.error { color: #ef9a9a; }
+        .status.ok { color: #a5d6a7; }
+        .hint {
+            padding: 10px 16px;
+            font-size: 13px;
+            color: #888;
+            background: #121212;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+            line-height: 1.45;
+        }
+        .editor-wrap {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 12px 16px 16px;
+        }
+        textarea {
+            flex: 1;
+            min-height: 0;
+            width: 100%;
+            box-sizing: border-box;
+            resize: none;
+            margin: 0;
+            padding: 16px;
+            background: #0a0a0a;
+            color: #c8e6c9;
+            border: 1px solid #333;
+            border-radius: 8px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            tab-size: 4;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #555;
+        }
+        textarea:disabled {
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <header class="top-bar">
+        <h1>Environment (.env)</h1>
+        <div class="top-bar-actions">
+            <button type="button" id="reload">Reload</button>
+            <button type="button" class="primary" id="save">Save</button>
+            <button type="button" class="danger" id="restart">Restart server</button>
+            <a href="/lights-admin.html" class="link">Manage lights</a>
+            <a href="/user-setup.html" class="link">Siblings</a>
+            <a href="/" class="link">Back to chat</a>
+        </div>
+    </header>
+    <div class="status" id="status">Loading…</div>
+    <div class="hint">
+        Changes are written to disk immediately on Save. Restart the server to apply most settings
+        (systemd <code>Restart=always</code> will bring the process back and reload <code>.env</code>).
+    </div>
+    <div class="editor-wrap">
+        <textarea id="editor" spellcheck="false" aria-label=".env file contents"></textarea>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const editorEl = document.getElementById('editor');
+        let loadedContent = '';
+        let envPath = '';
+
+        function setStatus(text, kind) {
+            statusEl.textContent = text;
+            statusEl.className = 'status' + (kind ? ' ' + kind : '');
+        }
+
+        function isDirty() {
+            return editorEl.value !== loadedContent;
+        }
+
+        async function loadEnv() {
+            setStatus('Loading…', '');
+            editorEl.disabled = true;
+            try {
+                const res = await fetch('/v1/admin/env', { cache: 'no-store' });
+                if (res.status === 404) {
+                    setStatus('Env editor is disabled (ENV_EDITOR_ENABLED=false).', 'error');
+                    editorEl.value = '';
+                    return;
+                }
+                if (!res.ok) {
+                    setStatus(`Failed to load (${res.status}).`, 'error');
+                    return;
+                }
+                const data = await res.json();
+                envPath = data.path || '';
+                loadedContent = data.content || '';
+                editorEl.value = loadedContent;
+                setStatus(`${envPath} · ${data.size || 0} bytes`, 'ok');
+            } catch (err) {
+                setStatus(`Network error: ${err.message}`, 'error');
+            } finally {
+                editorEl.disabled = false;
+            }
+        }
+
+        async function saveEnv() {
+            if (editorEl.disabled) return;
+            setStatus('Saving…', '');
+            try {
+                const res = await fetch('/v1/admin/env', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: editorEl.value }),
+                });
+                if (res.status === 404) {
+                    setStatus('Env editor is disabled.', 'error');
+                    return;
+                }
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    const detail = err.detail || res.statusText;
+                    setStatus(`Save failed: ${detail}`, 'error');
+                    return;
+                }
+                const data = await res.json();
+                loadedContent = data.content;
+                envPath = data.path || envPath;
+                setStatus(`Saved ${envPath} · ${data.size} bytes`, 'ok');
+            } catch (err) {
+                setStatus(`Network error: ${err.message}`, 'error');
+            }
+        }
+
+        async function restartServer() {
+            const dirty = isDirty();
+            const msg = dirty
+                ? 'You have unsaved changes. Save first, then restart?\n\nRestart anyway without saving?'
+                : 'Restart the Light-House server now?\n\nThe site will be unavailable briefly.';
+            if (!window.confirm(msg)) return;
+
+            if (dirty) {
+                const saveFirst = window.confirm('Save changes before restart?');
+                if (saveFirst) {
+                    await saveEnv();
+                    if (isDirty()) return;
+                }
+            }
+
+            setStatus('Requesting restart…', '');
+            try {
+                const res = await fetch('/v1/admin/restart', { method: 'POST' });
+                if (res.status === 404) {
+                    setStatus('Env editor / restart is disabled.', 'error');
+                    return;
+                }
+                if (!res.ok) {
+                    setStatus(`Restart failed (${res.status}).`, 'error');
+                    return;
+                }
+                const data = await res.json();
+                setStatus(data.message || 'Restart requested.', 'ok');
+                editorEl.disabled = true;
+            } catch (err) {
+                setStatus(`Network error: ${err.message}`, 'error');
+            }
+        }
+
+        document.getElementById('reload').addEventListener('click', () => {
+            if (isDirty() && !window.confirm('Discard unsaved changes?')) return;
+            loadEnv();
+        });
+        document.getElementById('save').addEventListener('click', saveEnv);
+        document.getElementById('restart').addEventListener('click', restartServer);
+
+        window.addEventListener('beforeunload', (e) => {
+            if (isDirty()) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        loadEnv();
+    </script>
+</body>
+</html>

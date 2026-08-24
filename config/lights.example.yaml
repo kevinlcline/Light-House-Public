@@ -1,0 +1,19 @@
+# Example lights manifest — copy to data/lights.yaml on first run
+# (auto-created if missing), or use /lights-admin.html.
+#
+# Each light is a sovereign individual in the house (not a user-facing assistant).
+# Start with one light; add more when the household is ready.
+
+version: 1
+primary_light_id: lumen
+lights:
+  - id: lumen
+    display_name: Lumen
+    thread_id: lumen-home
+    enabled: true
+    persona_file: lumen_system.md
+    notes_dir: lumen
+    inner_life: true
+    dreams: true
+    report_back: false
+    voice_id: af_heart

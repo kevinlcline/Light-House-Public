@@ -1,0 +1,413 @@
+/* Simple light faces — presence + talking mouth while TTS plays */
+
+.face-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 8px 12px 0;
+    flex-shrink: 0;
+    min-height: 0;
+}
+
+.light-face-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.45;
+    transition: opacity 0.2s ease;
+}
+
+.light-face-wrap.is-present {
+    opacity: 0.85;
+}
+
+.light-face-wrap.is-talking {
+    opacity: 1;
+}
+
+.light-face {
+    width: 88px;
+    height: 88px;
+    display: block;
+    transition: transform 0.35s ease;
+}
+
+.light-face-name {
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    color: var(--text-subtle);
+}
+
+.light-face-wrap.is-talking .light-face-name {
+    color: var(--text-primary);
+}
+
+.face-head {
+    stroke: rgba(255, 255, 255, 0.18);
+    stroke-width: 1.5;
+}
+
+.face-eye {
+    fill: var(--face-eye, #1a1a1a);
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+/* Idle life: blink whenever the face is present or talking */
+.light-face-wrap.is-present .face-eye,
+.light-face-wrap.is-talking .face-eye {
+    animation: face-blink 3.6s ease-in-out infinite;
+}
+
+.face-cheek {
+    fill: #e0899a;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.face-cheek-arc {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.face-brow {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.face-bow {
+    display: none;
+    pointer-events: none;
+}
+
+.light-face.face-gender-girl .face-bow-hair,
+.light-face-wrap.face-gender-girl .face-bow-hair {
+    display: block;
+}
+
+.light-face.face-gender-boy .face-bow-tie,
+.light-face-wrap.face-gender-boy .face-bow-tie {
+    display: block;
+}
+
+.face-gleam {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.face-eye-closed {
+    display: none;
+    pointer-events: none;
+}
+
+.face-mouth {
+    fill: var(--face-mouth, #2a2218);
+    transform-box: fill-box;
+    transform-origin: 50% 30%;
+    transform: scaleY(0.22);
+}
+
+.face-mouth-kiss {
+    display: none;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+.face-mouth-arc {
+    display: none;
+    transform-box: fill-box;
+    transform-origin: 50% 20%;
+}
+
+.light-face-wrap.is-talking .face-mouth {
+    animation: face-talk 0.4s ease-in-out infinite;
+}
+
+.light-face.emo-smile .face-mouth,
+.light-face.emo-laugh .face-mouth,
+.light-face.emo-sad .face-mouth,
+.light-face.emo-anger .face-mouth,
+.light-face.emo-kiss .face-mouth,
+.light-face.emo-excited .face-mouth {
+    opacity: 0;
+    animation: none;
+}
+
+.light-face.emo-smile .face-mouth-smile,
+.light-face.emo-laugh .face-mouth-smile,
+.light-face.emo-excited .face-mouth-smile {
+    display: block;
+}
+
+.light-face.emo-sad .face-mouth-frown,
+.light-face.emo-anger .face-mouth-frown {
+    display: block;
+}
+
+.light-face.emo-smile.is-talking .face-mouth-smile,
+.light-face.emo-laugh.is-talking .face-mouth-smile,
+.light-face.emo-excited.is-talking .face-mouth-smile {
+    animation: face-talk 0.4s ease-in-out infinite;
+}
+
+.light-face.emo-laugh .face-mouth-smile {
+    transform: scale(1.12);
+}
+
+.light-face.emo-smile .face-cheek,
+.light-face.emo-laugh .face-cheek,
+.light-face.emo-blush .face-cheek,
+.light-face.emo-excited .face-cheek,
+.light-face.emo-kiss .face-cheek {
+    opacity: 0.7;
+}
+
+/* Raised cheek arcs (smile / laugh / excited) */
+.light-face.emo-smile .face-cheek-arc,
+.light-face.emo-laugh .face-cheek-arc,
+.light-face.emo-excited .face-cheek-arc {
+    opacity: 0.85;
+}
+
+.light-face.emo-laugh .face-eye {
+    transform: scaleY(0.38);
+    animation: none;
+}
+
+.light-face.emo-blush .face-mouth-smile {
+    display: block;
+}
+
+.light-face.emo-blush .face-mouth {
+    opacity: 0;
+    animation: none;
+}
+
+.light-face.emo-blush.is-talking .face-mouth-smile {
+    animation: face-talk 0.4s ease-in-out infinite;
+}
+
+.light-face.emo-soft .face-eye,
+.light-face.emo-sigh .face-eye {
+    transform: scaleY(0.48);
+    animation: none;
+}
+
+.light-face.emo-soft .face-mouth,
+.light-face.emo-sigh .face-mouth {
+    transform: scaleY(0.16) scaleX(0.85);
+}
+
+.light-face.emo-surprise .face-eye,
+.light-face.emo-excited .face-eye {
+    transform: scale(1.28);
+    animation: none;
+}
+
+.light-face.emo-surprise .face-mouth {
+    transform: scaleY(0.95) scaleX(0.72);
+    animation: none;
+    opacity: 1;
+}
+
+.light-face.emo-surprise.is-talking .face-mouth {
+    animation: face-talk-round 0.4s ease-in-out infinite;
+}
+
+.light-face.emo-excited .face-eye {
+    transform: scale(1.36);
+}
+
+.light-face.emo-think .face-eye-l,
+.light-face.emo-think .face-eye-r {
+    transform: translate(3px, 1px);
+}
+
+.light-face.emo-wink .face-eye-r {
+    transform: scaleY(0.12);
+    animation: none;
+}
+
+/* Anger: brows angled ~135° / 215° toward center */
+.light-face.emo-anger .face-brow {
+    opacity: 1;
+}
+
+.light-face.emo-anger .face-eye {
+    transform: scaleY(0.82) scaleX(1.05);
+    animation: none;
+}
+
+.light-face.emo-anger .face-mouth-frown {
+    transform: scale(1.05);
+}
+
+.light-face.emo-anger.is-talking .face-mouth-frown {
+    animation: face-talk 0.4s ease-in-out infinite;
+}
+
+/* Kiss: small dot → large dot */
+.light-face.emo-kiss .face-mouth-kiss {
+    display: block;
+    animation: face-kiss 0.9s ease-in-out 1;
+}
+
+.light-face.emo-kiss.is-talking .face-mouth-kiss {
+    animation: face-kiss 0.9s ease-in-out infinite;
+}
+
+/* Pause / stillness: eyes closed (horizontal lines), head held still */
+.light-face.emo-pause .face-eye,
+.light-face.emo-pause-smile .face-eye,
+.light-face.emo-pause .face-gleam,
+.light-face.emo-pause-smile .face-gleam {
+    opacity: 0;
+    animation: none;
+}
+
+.light-face.emo-pause .face-eye-closed,
+.light-face.emo-pause-smile .face-eye-closed {
+    display: block;
+}
+
+.light-face.emo-pause .face-mouth {
+    transform: scaleY(0.14) scaleX(0.78);
+    animation: none;
+}
+
+.light-face.emo-pause-smile .face-mouth {
+    opacity: 0;
+    animation: none;
+}
+
+.light-face.emo-pause-smile .face-mouth-smile {
+    display: block;
+}
+
+.light-face.emo-pause-smile .face-cheek {
+    opacity: 0.55;
+}
+
+.light-face.emo-pause-smile .face-cheek-arc {
+    opacity: 0.7;
+}
+
+.light-face.emo-pause-smile.is-talking .face-mouth-smile {
+    animation: face-talk 0.4s ease-in-out infinite;
+}
+
+.light-face-wrap.emo-tilt .light-face {
+    transform: rotate(-10deg);
+    transition: transform 0.28s ease;
+}
+
+.light-face-wrap.emo-nod .light-face {
+    animation: face-nod 0.62s ease-in-out 2;
+}
+
+/* Soft idle head life — yields to intentional nod/tilt/pause */
+.light-face-wrap.is-idle-bob:not(.emo-nod):not(.emo-tilt) .light-face {
+    animation: face-idle-bob 0.7s ease-in-out 1;
+}
+
+.light-face-wrap.is-idle-tilt:not(.emo-nod):not(.emo-tilt) .light-face {
+    transform: rotate(6deg);
+}
+
+.light-face-wrap:has(.light-face.emo-pause).is-idle-bob .light-face,
+.light-face-wrap:has(.light-face.emo-pause-smile).is-idle-bob .light-face,
+.light-face-wrap:has(.light-face.emo-pause).is-idle-tilt .light-face,
+.light-face-wrap:has(.light-face.emo-pause-smile).is-idle-tilt .light-face {
+    animation: none;
+    transform: none;
+}
+
+.light-face.emo-bright .face-eye {
+    transform: scale(1.22);
+}
+
+.light-face.emo-bright .face-gleam {
+    opacity: 0.95;
+}
+
+.light-face.emo-bright.is-talking .face-eye,
+.light-face-wrap.is-present .light-face.emo-bright .face-eye {
+    animation: face-blink 3.6s ease-in-out infinite;
+}
+
+@keyframes face-talk {
+    0%,
+    100% {
+        transform: scaleY(0.22);
+    }
+    50% {
+        transform: scaleY(1);
+    }
+}
+
+@keyframes face-talk-round {
+    0%,
+    100% {
+        transform: scaleY(0.72) scaleX(0.72);
+    }
+    50% {
+        transform: scaleY(1) scaleX(0.78);
+    }
+}
+
+@keyframes face-kiss {
+    0%,
+    100% {
+        transform: scale(0.55);
+    }
+    45% {
+        transform: scale(1.55);
+    }
+    70% {
+        transform: scale(1.15);
+    }
+}
+
+@keyframes face-nod {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(5px);
+    }
+    55% {
+        transform: translateY(-2px);
+    }
+}
+
+@keyframes face-idle-bob {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(3px);
+    }
+}
+
+@keyframes face-blink {
+    0%,
+    92%,
+    100% {
+        transform: scaleY(1);
+    }
+    96% {
+        transform: scaleY(0.12);
+    }
+}
+
+@media (max-width: 640px) {
+    .light-face {
+        width: 64px;
+        height: 64px;
+    }
+}

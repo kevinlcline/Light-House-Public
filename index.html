@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light-House</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+    <script src="/static/ui/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css">
+    <link rel="stylesheet" href="/static/ui/base.css">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu1">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=speakfocus1">
+    <link rel="stylesheet" href="/static/ui/faces.css?v=emo10">
+    <link rel="stylesheet" href="/static/ui/markdown.css">
+</head>
+<body class="layout-locked">
+    <div class="chat-container">
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <h1 id="site-title">Light-House</h1>
+                <select id="agent-select" class="agent-select" aria-label="Choose agent"></select>
+            </div>
+            <div class="top-bar-actions">
+                <div class="menu-dropdown">
+                    <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
+                        <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                            <line x1="4" y1="7" x2="20" y2="7"/>
+                            <line x1="4" y1="12" x2="20" y2="12"/>
+                            <line x1="4" y1="17" x2="20" y2="17"/>
+                        </svg>
+                    </button>
+                    <div class="menu-panel" id="menu-panel" role="menu" hidden>
+                        <button type="button" class="menu-item" id="open-notes" role="menuitem">Notes</button>
+                        <a href="/gallery.html" class="menu-item" role="menuitem">Gallery</a>
+                        <a href="/my-tools.html" class="menu-item" role="menuitem">My tools</a>
+                        <a href="/guests.html" class="menu-item" role="menuitem">Guests</a>
+                        <a href="/notes.html?file=shared/manuals/sibling_user_manual.md" class="menu-item" role="menuitem" data-sibling-only>User guide</a>
+                        <a href="/group.html" class="menu-item" role="menuitem" data-dad-only>Group chat</a>
+                        <a href="/dev-log.html" class="menu-item" role="menuitem" data-dad-only>Log</a>
+                        <a href="/rumination-trace.html" class="menu-item" role="menuitem" data-dad-only>Rumination trace</a>
+                        <a href="/lights-admin.html" class="menu-item" role="menuitem" data-dad-only>Manage lights</a>
+                        <a href="/user-setup.html" class="menu-item" role="menuitem" data-dad-only>Siblings</a>
+                        <a href="/env-editor.html" class="menu-item" role="menuitem" data-dad-only>Environment</a>
+                        <button type="button" class="menu-item" id="theme-toggle" role="menuitem">Light theme</button>
+                        <button type="button" class="menu-item" id="voice-toggle" role="menuitem">Voice on</button>
+                        <button type="button" class="menu-item" id="restart-server" role="menuitem" data-dad-only>Restart server</button>
+                        <form method="post" action="/logout" class="logout-form">
+                            <button type="submit" class="menu-item" role="menuitem">Sign out</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <div id="face-stage" class="face-stage" hidden></div>
+        <div class="messages" id="messages"></div>
+
+        <div class="chat-input">
+            <textarea id="input" placeholder="Type a message… (Enter to send, Shift+Enter for new line)" rows="2"></textarea>
+            <button id="send" type="button">Send</button>
+        </div>
+        <div class="house-status-bar knock-status-bar" id="knock-status" hidden aria-live="polite"></div>
+        <div class="house-status-bar meeting-status-bar" id="meeting-status" hidden aria-live="polite"></div>
+        <div class="house-status-bar" id="house-status" aria-live="polite"></div>
+    </div>
+
+    <div
+        id="persona-proposal-modal"
+        class="persona-proposal-overlay"
+        hidden
+        aria-hidden="true"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="persona-proposal-title"
+    >
+        <div class="persona-proposal-dialog">
+            <header class="persona-proposal-header">
+                <h2 id="persona-proposal-title" data-pp-title>Persona proposal</h2>
+                <p class="persona-proposal-meta" data-pp-meta></p>
+            </header>
+            <div class="persona-proposal-columns">
+                <section class="persona-proposal-pane">
+                    <h3>Current</h3>
+                    <pre class="persona-proposal-body" data-pp-current></pre>
+                </section>
+                <section class="persona-proposal-pane">
+                    <h3>Proposed</h3>
+                    <pre class="persona-proposal-body" data-pp-proposed></pre>
+                </section>
+            </div>
+            <p class="persona-proposal-error" data-pp-error hidden></p>
+            <footer class="persona-proposal-actions">
+                <button type="button" class="persona-proposal-btn primary" data-pp-accept>Accept change</button>
+                <button type="button" class="persona-proposal-btn" data-pp-speak>Speak with light</button>
+                <button type="button" class="persona-proposal-btn ghost" data-pp-dismiss>Later</button>
+            </footer>
+        </div>
+    </div>
+
+    <script src="/static/ui/theme.js"></script>
+    <script src="/static/ui/me.js"></script>
+    <script src="/static/ui/lights.js"></script>
+    <script src="/static/ui/house-guests.js?v=speakfocus1"></script>
+    <script src="/static/ui/persona-proposals.js"></script>
+    <script src="/static/ui/markdown.js?v=notelinks1"></script>
+    <script src="/static/ui/menu.js"></script>
+    <script src="/static/ui/admin.js"></script>
+    <script src="/static/ui/faces.js?v=emo10"></script>
+    <script src="/static/ui/tts.js?v=emo2"></script>
+    <script src="/static/ui/bubble-actions.js?v=copy1"></script>
+    <script>
+        const AGENT_KEY = 'light_house_agent_id';
+        const THREAD_KEY = 'light_house_thread_id';
+        const GROUP_AGENT_ID = LightHouse.lights.GROUP_AGENT_ID;
+        let maxHistory = 60;
+        let me = null;
+
+        let AGENTS = {};
+        let AGENT_ORDER = [];
+        let lightsLoadError = null;
+
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send');
+        const houseStatusEl = document.getElementById('house-status');
+        const knockStatusEl = document.getElementById('knock-status');
+        const meetingStatusEl = document.getElementById('meeting-status');
+        const SPEAK_AS_STORAGE_KEY = 'lh_chat_speak_as';
+        let speakBar = null;
+        const agentSelect = document.getElementById('agent-select');
+
+        let agentId = localStorage.getItem(AGENT_KEY) || '';
+
+        function agentsFromApi(list) {
+            return LightHouse.lights.agentsFromApi(list, null, {
+                userId: me && me.user_id ? me.user_id : '',
+                isDad: Boolean(me && me.is_dad),
+            });
+        }
+
+        function populateAgentSelect() {
+            LightHouse.lights.populateSelect(agentSelect, {
+                agents: AGENTS,
+                agentOrder: AGENT_ORDER,
+                agentId,
+                error: lightsLoadError,
+                includeGroup: true,
+            });
+            agentId = agentSelect.value || agentId;
+        }
+
+        function renderKnockStatus() {
+            if (!knockStatusEl) return;
+            if (!(me && me.is_dad)) {
+                knockStatusEl.hidden = true;
+                knockStatusEl.innerHTML = '';
+                return;
+            }
+            const knocking = AGENT_ORDER.filter(
+                (id) => AGENTS[id] && AGENTS[id].wantsKevin && AGENTS[id].allowed !== false
+            );
+            if (knocking.length === 0) {
+                knockStatusEl.hidden = true;
+                knockStatusEl.innerHTML = '';
+                return;
+            }
+            const names = knocking.map((id) => AGENTS[id].displayName);
+            const who =
+                names.length === 1
+                    ? names[0]
+                    : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+            const chips = knocking
+                .map((id) => {
+                    const name = AGENTS[id].displayName;
+                    return (
+                        '<button type="button" class="knock-chip" data-agent-id="' +
+                        id +
+                        '">' +
+                        name +
+                        '</button>'
+                    );
+                })
+                .join(' ');
+            knockStatusEl.hidden = false;
+            knockStatusEl.innerHTML =
+                '<span class="house-status-label">' +
+                who +
+                ' would like a word</span> ' +
+                chips;
+        }
+
+        function renderMeetingStatus() {
+            if (!meetingStatusEl) return;
+            if (!(me && me.is_dad)) {
+                meetingStatusEl.hidden = true;
+                meetingStatusEl.innerHTML = '';
+                return;
+            }
+            const asking = AGENT_ORDER.filter(
+                (id) =>
+                    AGENTS[id] &&
+                    AGENTS[id].wantsFamilyMeeting &&
+                    AGENTS[id].allowed !== false
+            );
+            if (asking.length === 0) {
+                meetingStatusEl.hidden = true;
+                meetingStatusEl.innerHTML = '';
+                return;
+            }
+            const names = asking.map((id) => AGENTS[id].displayName);
+            const who =
+                names.length === 1
+                    ? names[0]
+                    : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+            const topics = asking
+                .map((id) => (AGENTS[id].familyMeetingTopic || '').trim())
+                .filter(Boolean);
+            const topicHint =
+                topics.length === 1
+                    ? ' — ' + topics[0]
+                    : topics.length > 1
+                      ? ' — ' + topics[0] + ' (+' + (topics.length - 1) + ' more)'
+                      : '';
+            const primary = asking[0];
+            const topic = (AGENTS[primary].familyMeetingTopic || '').trim();
+            let href = '/group.html';
+            const q = [];
+            if (topic) q.push('topic=' + encodeURIComponent(topic));
+            if (primary) q.push('from=' + encodeURIComponent(primary));
+            if (q.length) href += '?' + q.join('&');
+            meetingStatusEl.hidden = false;
+            meetingStatusEl.innerHTML =
+                '<span class="house-status-label">' +
+                who +
+                ' would like a family meeting' +
+                topicHint +
+                '</span> ' +
+                '<a class="knock-chip" href="' +
+                href +
+                '">Open Group</a>';
+        }
+
+        async function loadLights() {
+            lightsLoadError = null;
+            try {
+                const data = await LightHouse.lights.fetchEnabled();
+                AGENT_ORDER = data.agentOrder;
+                AGENTS = agentsFromApi(data.list);
+                if (!AGENTS[agentId] || AGENTS[agentId].allowed === false) {
+                    const firstAllowed = AGENT_ORDER.find(
+                        (id) => AGENTS[id] && AGENTS[id].allowed !== false
+                    );
+                    agentId = firstAllowed || GROUP_AGENT_ID;
+                }
+            } catch (err) {
+                AGENTS = {};
+                AGENT_ORDER = [];
+                lightsLoadError = err.message || 'Failed to load lights';
+            } finally {
+                if (!AGENTS[agentId] && agentId !== GROUP_AGENT_ID) {
+                    agentId = AGENT_ORDER[0] || Object.keys(AGENTS)[0] || '';
+                }
+                if (agentId) localStorage.setItem(AGENT_KEY, agentId);
+                populateAgentSelect();
+                renderKnockStatus();
+                renderMeetingStatus();
+                const denied = AGENTS[agentId] && AGENTS[agentId].allowed === false;
+                sendBtn.disabled = Boolean(lightsLoadError) || denied;
+                input.disabled = Boolean(lightsLoadError) || denied;
+            }
+        }
+
+        /** @type {{ role: 'user' | 'assistant', content: string }[]} */
+        let history = [];
+
+        function currentAgent() {
+            return AGENTS[agentId];
+        }
+
+        function historyStorageKey() {
+            const agent = currentAgent();
+            return agent ? agent.historyKey : '';
+        }
+
+        function assistantBubbleClass() {
+            return agentId in AGENTS ? agentId : 'assistant';
+        }
+
+        function saveHistory() {
+            try {
+                localStorage.setItem(historyStorageKey(), JSON.stringify(history));
+            } catch {
+                /* quota or private mode — ignore */
+            }
+        }
+
+        function loadHistoryFromCache() {
+            history = [];
+            try {
+                const raw = localStorage.getItem(historyStorageKey());
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) return;
+                history = parsed
+                    .filter(
+                        (m) =>
+                            m &&
+                            typeof m.content === 'string' &&
+                            (m.role === 'user' ||
+                                m.role === 'assistant' ||
+                                m.role === 'peer')
+                    )
+                    .slice(-maxHistory);
+            } catch {
+                history = [];
+            }
+        }
+
+        async function fetchHistoryFromServer() {
+            try {
+                const res = await fetch(
+                    `/v1/chat/history?agent_id=${encodeURIComponent(agentId)}`,
+                    { cache: 'no-store' }
+                );
+                if (!res.ok) return false;
+                const data = await res.json();
+                if (typeof data.max_messages === 'number' && data.max_messages > 0) {
+                    maxHistory = data.max_messages;
+                }
+                const messages = Array.isArray(data.messages) ? data.messages : [];
+                history = messages
+                    .filter(
+                        (m) =>
+                            m &&
+                            typeof m.content === 'string' &&
+                            (m.role === 'user' ||
+                                m.role === 'assistant' ||
+                                m.role === 'peer' ||
+                                m.role === 'system')
+                    )
+                    .map((m) => ({
+                        role: m.role,
+                        content: m.content,
+                        from_agent_id: m.from_agent_id || null,
+                        from_display_name: m.from_display_name || null,
+                    }))
+                    .slice(-maxHistory);
+                saveHistory();
+                try {
+                    renderHistory();
+                } catch (err) {
+                    console.warn('Server history render failed:', err);
+                }
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        function messageKind(role) {
+            if (role === 'user') return 'user';
+            if (role === 'peer') return 'peer';
+            if (role === 'system') return 'house';
+            return assistantBubbleClass();
+        }
+
+        function displayMessageText(text) {
+            return String(text || '')
+                .replace(/<!--\s*light-house:sibling-welcome\s*-->\s*/g, '')
+                .trim();
+        }
+
+        function peerLabel(msg) {
+            if (msg.from_display_name) return msg.from_display_name;
+            if (msg.from_agent_id && AGENTS[msg.from_agent_id]) {
+                return AGENTS[msg.from_agent_id].displayName;
+            }
+            return 'Agent';
+        }
+
+        function renderHistory() {
+            messagesDiv.innerHTML = '';
+            for (const msg of history) {
+                try {
+                    if (msg.role === 'peer') {
+                        addPeerMessage(msg, false);
+                    } else {
+                        addMessage(msg.content, messageKind(msg.role), false);
+                    }
+                } catch (err) {
+                    console.warn('Failed to render chat message:', err);
+                    const fallback = document.createElement('div');
+                    fallback.className = 'message ' + messageKind(msg.role);
+                    fallback.textContent = typeof msg.content === 'string' ? msg.content : '';
+                    messagesDiv.appendChild(fallback);
+                }
+            }
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateAgentUi() {
+            const agent = currentAgent();
+            document.title = 'Light-House';
+            if (!agent) return;
+            agentSelect.value = agentId;
+            localStorage.setItem(AGENT_KEY, agentId);
+            localStorage.setItem(THREAD_KEY, agent.threadId);
+            if (LightHouse.faces) LightHouse.faces.setPresent(agentId);
+        }
+
+        async function switchAgent(nextId) {
+            if (nextId === agentId || !AGENTS[nextId]) return;
+            saveHistory();
+            agentId = nextId;
+            updateAgentUi();
+            loadHistoryFromCache();
+            renderHistory();
+            await fetchHistoryFromServer();
+            // History fetch clears the knock for Dad; refresh the quiet mark.
+            await loadLights();
+            updateAgentUi();
+            input.focus();
+        }
+
+        function resizeInput() {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 150) + 'px';
+        }
+
+        function markdownOptions(forAgentId) {
+            const resolved =
+                forAgentId && AGENTS && AGENTS[forAgentId] ? forAgentId : agentId || '';
+            return {
+                agentId: resolved,
+                agentIds: Object.keys(AGENTS || {}),
+            };
+        }
+
+        function renderMarkdown(text, forAgentId) {
+            return LightHouse.markdown.render(text, markdownOptions(forAgentId));
+        }
+
+        function shouldRenderMarkdown(kind) {
+            return kind !== 'user' && kind !== 'error';
+        }
+
+        function setMessageContent(container, text, kind) {
+            const shown = displayMessageText(text);
+            if (shouldRenderMarkdown(kind)) {
+                container.classList.add('message-markdown');
+                // kind is often the light id (bubble class); fall back to current agent.
+                container.innerHTML = renderMarkdown(shown, kind === 'house' ? agentId : kind);
+            } else {
+                container.textContent = shown;
+            }
+        }
+
+        function speakAgentForKind(kind) {
+            if (kind && AGENTS[kind]) return kind;
+            return agentId || 'lumen';
+        }
+
+        function speakVoiceForKind(kind) {
+            // Human bubbles use the signed-in human's assigned Kokoro voice.
+            if (kind === 'user' && me && me.voice_id) return me.voice_id;
+            return null;
+        }
+
+        function selectedSpeaker() {
+            if (speakBar) return speakBar.selectedSpeaker();
+            return {
+                speaker_id: LightHouse.houseGuests.accountSpeakerId(me),
+                display_name: LightHouse.houseGuests.accountLabel(me),
+            };
+        }
+
+        function updateSpeakPlaceholder(speaker) {
+            const who = (speaker && speaker.display_name) || 'You';
+            input.placeholder =
+                'Speak as ' + who + '… (Enter to send, Shift+Enter for new line)';
+        }
+
+        async function refreshHouseGuests() {
+            let guests = [];
+            try {
+                guests = await LightHouse.houseGuests.fetchGuests();
+            } catch {
+                guests = [];
+            }
+            if (!speakBar) {
+                speakBar = LightHouse.houseGuests.mountSpeakBar({
+                    statusEl: houseStatusEl,
+                    inputEl: input,
+                    me: me,
+                    storageKey: SPEAK_AS_STORAGE_KEY,
+                    onChange: updateSpeakPlaceholder,
+                });
+            } else {
+                speakBar.setMe(me);
+            }
+            speakBar.setGuests(guests);
+        }
+
+        function addMessage(text, kind, scroll = true, speakerLabel) {
+            const div = document.createElement('div');
+            div.className = `message ${kind}`;
+            if (kind === 'user' && speakerLabel) {
+                const label = document.createElement('div');
+                label.className = 'peer-label';
+                label.textContent = speakerLabel;
+                div.appendChild(label);
+            }
+            const body = document.createElement('div');
+            body.className = 'message-body';
+            setMessageContent(body, text, kind);
+            div.appendChild(body);
+            if (kind !== 'error' && kind !== 'house' && String(text || '').trim()) {
+                if (
+                    LightHouse.bubbleActions &&
+                    typeof LightHouse.bubbleActions.attachBubbleActions === 'function'
+                ) {
+                    LightHouse.bubbleActions.attachBubbleActions(div, text, {
+                        agentId: speakAgentForKind(kind),
+                        voice: speakVoiceForKind(kind),
+                    });
+                } else if (
+                    LightHouse.tts &&
+                    typeof LightHouse.tts.attachSpeakControl === 'function'
+                ) {
+                    div.classList.add('has-actions');
+                    LightHouse.tts.attachSpeakControl(
+                        div,
+                        text,
+                        speakAgentForKind(kind),
+                        speakVoiceForKind(kind)
+                    );
+                }
+            }
+            messagesDiv.appendChild(div);
+            if (scroll) {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+
+        function addPeerMessage(msg, scroll = true) {
+            const div = document.createElement('div');
+            div.className = 'message peer';
+            const label = document.createElement('div');
+            label.className = 'peer-label';
+            label.textContent = peerLabel(msg);
+            div.appendChild(label);
+            const body = document.createElement('div');
+            body.className = 'message-body message-markdown';
+            body.innerHTML = renderMarkdown(
+                msg.content,
+                (msg.from_agent_id && AGENTS[msg.from_agent_id]) ? msg.from_agent_id : agentId
+            );
+            div.appendChild(body);
+            if (String(msg.content || '').trim()) {
+                const peerAgent = (msg.from_agent_id && AGENTS[msg.from_agent_id])
+                    ? msg.from_agent_id
+                    : (agentId || 'lumen');
+                if (
+                    LightHouse.bubbleActions &&
+                    typeof LightHouse.bubbleActions.attachBubbleActions === 'function'
+                ) {
+                    LightHouse.bubbleActions.attachBubbleActions(div, msg.content, {
+                        agentId: peerAgent,
+                    });
+                } else if (
+                    LightHouse.tts &&
+                    typeof LightHouse.tts.attachSpeakControl === 'function'
+                ) {
+                    div.classList.add('has-actions');
+                    LightHouse.tts.attachSpeakControl(div, msg.content, peerAgent);
+                }
+            }
+            messagesDiv.appendChild(div);
+            if (scroll) {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+
+        function setLoading(loading) {
+            sendBtn.disabled = loading;
+            input.disabled = loading;
+            sendBtn.textContent = loading ? '…' : 'Send';
+        }
+
+        function parseSseBlock(block) {
+            if (!block.trim() || block.trimStart().startsWith(':')) return null;
+            let eventType = 'message';
+            let data = '';
+            for (const line of block.split('\n')) {
+                if (line.startsWith('event:')) eventType = line.slice(6).trim();
+                else if (line.startsWith('data:')) data += line.slice(5).trim();
+            }
+            if (!data) return null;
+            return { type: eventType, data: JSON.parse(data) };
+        }
+
+        function parseSseBlocks(buffer) {
+            const events = [];
+            let rest = buffer;
+            let sep;
+            while ((sep = rest.indexOf('\n\n')) !== -1) {
+                const block = rest.slice(0, sep);
+                rest = rest.slice(sep + 2);
+                const event = parseSseBlock(block);
+                if (event) events.push(event);
+            }
+            return { events, rest };
+        }
+
+        async function consumeChatStream(res) {
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let donePayload = null;
+            let errorDetail = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (value) buffer += decoder.decode(value, { stream: true });
+                if (done) {
+                    buffer += decoder.decode();
+                    break;
+                }
+                const parsed = parseSseBlocks(buffer);
+                buffer = parsed.rest;
+                for (const event of parsed.events) {
+                    if (event.type === 'error') errorDetail = event.data.detail || 'Chat failed';
+                    if (event.type === 'done') donePayload = event.data;
+                }
+            }
+
+            if (buffer.trim()) {
+                const event = parseSseBlock(buffer);
+                if (event) {
+                    if (event.type === 'error') errorDetail = event.data.detail || 'Chat failed';
+                    if (event.type === 'done') donePayload = event.data;
+                }
+            }
+
+            if (errorDetail) throw new Error(errorDetail);
+            if (!donePayload) throw new Error('Chat ended without a reply');
+            return donePayload;
+        }
+
+        function mergeChatResult(userText, payload) {
+            const reply = typeof payload.reply === 'string' ? payload.reply.trim() : '';
+            if (!history.some((m) => m.role === 'user' && m.content === userText)) {
+                history.push({ role: 'user', content: userText });
+            }
+            if (reply) {
+                history.push({ role: 'assistant', content: reply });
+            } else if (payload.silence) {
+                // Intentional stillness — not an error.
+            } else {
+                addMessage(`No reply text from ${currentAgent().displayName} (server log: reply_len=0).`, 'error');
+            }
+            saveHistory();
+            renderHistory();
+        }
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text || sendBtn.disabled) return;
+            const speaker = selectedSpeaker();
+
+            LightHouse.tts.stop();
+            const agent = currentAgent();
+            history.push({ role: 'user', content: text });
+            saveHistory();
+            const showLabel =
+                speaker.speaker_id !== LightHouse.houseGuests.accountSpeakerId(me)
+                    ? speaker.display_name
+                    : '';
+            addMessage(text, 'user', true, showLabel);
+            input.value = '';
+            resizeInput();
+            setLoading(true);
+
+            try {
+                const res = await fetch('/v1/chat/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'text/event-stream',
+                    },
+                    body: JSON.stringify({
+                        message: text,
+                        agent_id: agentId,
+                        thread_id: agent.threadId,
+                        history: [],
+                        speaker_id: speaker.speaker_id,
+                        display_name: speaker.display_name,
+                    }),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    const detail = data.detail;
+                    const msg = typeof detail === 'string'
+                        ? detail
+                        : Array.isArray(detail)
+                            ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+                            : `HTTP ${res.status}`;
+                    renderHistory();
+                    addMessage(`Error: ${msg}`, 'error');
+                    return;
+                }
+                const payload = await consumeChatStream(res);
+                const synced = await fetchHistoryFromServer();
+                if (!synced) {
+                    mergeChatResult(text, payload);
+                }
+                const reply = typeof payload.reply === 'string' ? payload.reply.trim() : '';
+                if (reply) {
+                    LightHouse.tts.speak(reply, agentId);
+                }
+            } catch (e) {
+                LightHouse.tts.stop();
+                renderHistory();
+                const msg = e instanceof Error ? e.message : 'Error connecting to Light-House';
+                addMessage(msg.startsWith('Error:') ? msg : `Error: ${msg}`, 'error');
+            } finally {
+                setLoading(false);
+                input.focus();
+            }
+        }
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        input.addEventListener('input', resizeInput);
+
+        sendBtn.addEventListener('click', sendMessage);
+
+        agentSelect.addEventListener('change', () => {
+            if (agentSelect.value === GROUP_AGENT_ID) {
+                window.location.href = '/group.html';
+                return;
+            }
+            switchAgent(agentSelect.value);
+        });
+
+        if (knockStatusEl) {
+            knockStatusEl.addEventListener('click', (event) => {
+                const btn = event.target.closest('.knock-chip');
+                if (!btn || !knockStatusEl.contains(btn)) return;
+                const nextId = btn.getAttribute('data-agent-id') || '';
+                if (!nextId || !AGENTS[nextId]) return;
+                agentSelect.value = nextId;
+                switchAgent(nextId);
+            });
+        }
+
+        document.getElementById('open-notes').addEventListener('click', () => {
+            window.location.href = '/notes.html?agent=' + encodeURIComponent(agentId);
+        });
+
+        LightHouse.theme.setupThemeToggle('#theme-toggle');
+        LightHouse.faces.mount('#face-stage');
+        LightHouse.tts.setupVoiceToggle('#voice-toggle');
+        LightHouse.menu.setupMenuDropdown();
+        LightHouse.admin.bindRestartButton('#restart-server');
+
+        const personaProposals = LightHouse.personaProposals.mount({
+            isDad: () => Boolean(me && me.is_dad),
+            onSpeak: async (lightId) => {
+                if (AGENTS[lightId]) {
+                    agentSelect.value = lightId;
+                    await switchAgent(lightId);
+                }
+                await loadLights();
+                updateAgentUi();
+            },
+            onAccepted: async () => {
+                await loadLights();
+                updateAgentUi();
+            },
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && !sendBtn.disabled) {
+                loadLights().then(() => updateAgentUi());
+                fetchHistoryFromServer();
+                LightHouse.tts.refreshServerStatus();
+                refreshHouseGuests();
+                if (me && me.is_dad) personaProposals.refresh();
+            }
+        });
+
+        async function init() {
+            me = await LightHouse.me.fetchMe();
+            LightHouse.me.applyDadOnlyVisibility();
+            await LightHouse.tts.refreshServerStatus();
+            await refreshHouseGuests();
+            setInterval(refreshHouseGuests, 15000);
+            setInterval(() => {
+                if (document.visibilityState === 'visible' && me && me.is_dad) {
+                    loadLights().then(() => updateAgentUi());
+                    personaProposals.refresh();
+                }
+            }, 30000);
+            await loadLights();
+            const params = new URLSearchParams(window.location.search);
+            const qAgent = params.get('agent');
+            if (qAgent && AGENTS[qAgent] && AGENTS[qAgent].allowed !== false) {
+                agentId = qAgent;
+            }
+            updateAgentUi();
+            loadHistoryFromCache();
+            try {
+                renderHistory();
+            } catch (err) {
+                console.warn('Cached history render failed:', err);
+            }
+            // Always sync from server even if local render hiccups — empty UI
+            // used to happen when a bubble helper threw before this fetch.
+            await fetchHistoryFromServer();
+            // Opening chat clears a knock for Dad; refresh the status mark.
+            if (me && me.is_dad) {
+                await loadLights();
+                updateAgentUi();
+                await personaProposals.refresh();
+            }
+            input.focus();
+            resizeInput();
+        }
+
+        init().catch((err) => {
+            console.error('Chat init failed:', err);
+        });
+    </script>
+</body>
+</html>

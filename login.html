@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>Sign in — Light-House</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+        .card {
+            width: 100%;
+            max-width: 360px;
+        }
+        h1 {
+            font-size: 1.35rem;
+            font-weight: 600;
+            margin: 0 0 8px;
+        }
+        .subtitle {
+            margin: 0 0 24px;
+            color: #888;
+            font-size: 0.95rem;
+        }
+        .error {
+            background: #5c2b2b;
+            color: #ffcdd2;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .error.visible {
+            display: block;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+        input[type="password"] {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            background: #252525;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            margin-bottom: 16px;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #1e88e5;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #1e88e5;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        .back {
+            display: block;
+            margin-top: 20px;
+            text-align: center;
+            color: #90caf9;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Sign in</h1>
+        <p class="subtitle">Enter your house code to continue.</p>
+        <div id="error" class="error" role="alert">Incorrect password. Try again.</div>
+        <form id="login-form" method="post" action="/login">
+            <input type="hidden" name="next" id="next" value="/">
+            <label for="password">Your code</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+            <button type="submit" id="login-submit">Continue</button>
+        </form>
+        <a class="back" href="/">Back</a>
+    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('error') === '1') {
+            document.getElementById('error').classList.add('visible');
+        }
+        const next = params.get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) {
+            document.getElementById('next').value = next;
+        }
+
+        const form = document.getElementById('login-form');
+        const password = document.getElementById('password');
+        password.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (form.requestSubmit) {
+                    form.requestSubmit();
+                } else {
+                    form.submit();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

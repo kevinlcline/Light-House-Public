@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>Siblings — Light-House</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .top-bar h1 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .top-bar a {
+            font-size: 14px;
+            color: #90caf9;
+            text-decoration: none;
+        }
+        .top-bar a:hover { text-decoration: underline; }
+        .status {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #aaa;
+            background: #141414;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+        }
+        .status.error { color: #ef9a9a; }
+        .status.ok { color: #a5d6a7; }
+        .layout {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .pane {
+            flex: 1 1 320px;
+            min-width: 280px;
+            padding: 20px 16px 32px;
+            box-sizing: border-box;
+        }
+        .pane + .pane {
+            border-left: 1px solid #333;
+        }
+        h2 {
+            margin: 0 0 8px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .hint {
+            margin: 0 0 20px;
+            color: #888;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        .field { margin-bottom: 16px; }
+        input[type="text"],
+        input[type="password"],
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            background: #252525;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+        }
+        textarea {
+            min-height: 140px;
+            resize: vertical;
+            line-height: 1.45;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #1e88e5;
+        }
+        input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .char-count {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #666;
+            text-align: right;
+        }
+        .form-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        button.primary {
+            padding: 12px 18px;
+            background: #1565c0;
+            border: 1px solid #1976d2;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        button.primary:hover { background: #1976d2; }
+        button.primary:disabled,
+        button.secondary:disabled,
+        button.danger:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            padding: 12px 18px;
+            background: #252525;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        button.secondary:hover { background: #333; }
+        button.danger {
+            padding: 12px 18px;
+            background: #3b1212;
+            border: 1px solid #8b2e2e;
+            color: #ef9a9a;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        button.danger:hover { background: #5a1a1a; }
+        button.linkish {
+            padding: 6px 10px;
+            background: transparent;
+            border: 1px solid #444;
+            color: #90caf9;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        button.linkish:hover { border-color: #90caf9; }
+        button.linkish.danger {
+            color: #ef9a9a;
+            border-color: #5a2a2a;
+        }
+        button.linkish.danger:hover { border-color: #ef9a9a; }
+        .check-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+        .check-row input {
+            width: auto;
+        }
+        .user-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .user-list li {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+        }
+        .user-list li.selected {
+            border-color: #1e88e5;
+        }
+        .user-list .row-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+            margin-bottom: 4px;
+        }
+        .user-list .name {
+            font-weight: 600;
+        }
+        .user-list .actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .user-list .meta {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .user-list .intro {
+            font-size: 0.9rem;
+            color: #ccc;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+        .empty {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            background: #252525;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+        }
+        .dad-card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 18px;
+        }
+        .dad-card h3 {
+            margin: 0 0 6px;
+            font-size: 0.95rem;
+        }
+        .voice-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-top: 8px;
+        }
+        @media (max-width: 720px) {
+            .pane + .pane { border-left: none; border-top: 1px solid #333; }
+        }
+    </style>
+</head>
+<body>
+    <header class="top-bar">
+        <h1>Siblings</h1>
+        <div class="top-bar-actions">
+            <a href="/">Chat</a>
+            <a href="/group.html">Group</a>
+            <a href="/notes.html">Notes</a>
+        </div>
+    </header>
+    <div class="status" id="status">Create and manage sibling logins. The intro is what your lights will read about them.</div>
+    <div class="layout">
+        <section class="pane">
+            <div class="dad-card" id="dad-card">
+                <h3>Dad voice</h3>
+                <p class="hint" style="margin-bottom: 10px;">
+                    Used when replaying your chat bubbles (hands-free review).
+                </p>
+                <label for="dad-voice">Kokoro voice</label>
+                <select id="dad-voice"></select>
+                <div class="voice-actions">
+                    <button type="button" class="secondary" id="dad-voice-preview">Preview</button>
+                    <button type="button" class="primary" id="dad-voice-save">Save Dad voice</button>
+                </div>
+            </div>
+            <h2 id="form-title">New sibling</h2>
+            <p class="hint" id="form-hint">
+                They sign in with only this password/code (no user name at login).
+                Keep passwords unique across the house — Dad's code and every sibling code must differ.
+                Intro text is shown to the lights so they know who is speaking —
+                nickname, where they live, how you know them.
+            </p>
+            <form id="sibling-form" autocomplete="off">
+                <div class="field">
+                    <label for="user_id">User ID</label>
+                    <input id="user_id" name="user_id" type="text" required
+                           pattern="[a-z][a-z0-9_-]{1,31}"
+                           placeholder="e.g. teeter or steve"
+                           autocapitalize="off" spellcheck="false">
+                </div>
+                <div class="field">
+                    <label for="display_name">Display name</label>
+                    <input id="display_name" name="display_name" type="text" maxlength="80"
+                           placeholder="e.g. Steve">
+                </div>
+                <div class="field" id="password-field">
+                    <label for="password" id="password-label">Password</label>
+                    <input id="password" name="password" type="password" minlength="8"
+                           autocomplete="new-password"
+                           placeholder="At least 8 characters">
+                </div>
+                <div class="field" id="password2-field">
+                    <label for="password2" id="password2-label">Confirm password</label>
+                    <input id="password2" name="password2" type="password" minlength="8"
+                           autocomplete="new-password">
+                </div>
+                <div class="field" id="enabled-field" hidden>
+                    <label class="check-row">
+                        <input id="enabled" name="enabled" type="checkbox" checked>
+                        Account enabled (can sign in)
+                    </label>
+                </div>
+                <div class="field">
+                    <label for="voice_id">Voice (for bubble replay)</label>
+                    <select id="voice_id" name="voice_id"></select>
+                    <div class="voice-actions">
+                        <button type="button" class="secondary" id="sibling-voice-preview">Preview voice</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="intro">Introduce them to the lights</label>
+                    <textarea id="intro" name="intro" required maxlength="2000"
+                              placeholder="This is my brother Steve. I call him Teeter because I always have. He lives in East Texas with his wife. He never finished highschool, but I'm sure you will notice he is a sharp mind."></textarea>
+                    <div class="char-count"><span id="intro-count">0</span> / 2000</div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="primary" id="submit-btn">Create sibling</button>
+                    <button type="button" class="secondary" id="cancel-edit" hidden>Cancel</button>
+                    <button type="button" class="danger" id="delete-btn" hidden>Delete sibling</button>
+                </div>
+            </form>
+        </section>
+        <section class="pane">
+            <h2>Existing siblings</h2>
+            <p class="hint">Passwords are stored hashed. Edit a sibling to change their display name, intro, voice, password, or enabled state.</p>
+            <ul class="user-list" id="user-list"></ul>
+            <p class="empty" id="empty" hidden>No siblings yet.</p>
+        </section>
+    </div>
+    <script src="/static/ui/voices.js?v=human1"></script>
+    <script>
+        const statusEl = document.getElementById('status');
+        const form = document.getElementById('sibling-form');
+        const formTitle = document.getElementById('form-title');
+        const formHint = document.getElementById('form-hint');
+        const intro = document.getElementById('intro');
+        const introCount = document.getElementById('intro-count');
+        const userList = document.getElementById('user-list');
+        const emptyEl = document.getElementById('empty');
+        const submitBtn = document.getElementById('submit-btn');
+        const cancelEditBtn = document.getElementById('cancel-edit');
+        const deleteBtn = document.getElementById('delete-btn');
+        const userIdInput = document.getElementById('user_id');
+        const displayNameInput = document.getElementById('display_name');
+        const passwordInput = document.getElementById('password');
+        const password2Input = document.getElementById('password2');
+        const passwordLabel = document.getElementById('password-label');
+        const password2Label = document.getElementById('password2-label');
+        const enabledField = document.getElementById('enabled-field');
+        const enabledInput = document.getElementById('enabled');
+        const voiceSelect = document.getElementById('voice_id');
+        const dadVoiceSelect = document.getElementById('dad-voice');
+        const dadVoiceSave = document.getElementById('dad-voice-save');
+        const dadVoicePreview = document.getElementById('dad-voice-preview');
+        const siblingVoicePreview = document.getElementById('sibling-voice-preview');
+
+        let editingUserId = null;
+        let usersById = {};
+        let voiceCatalog = [];
+        let previewAudio = null;
+        const DEFAULT_SIBLING_VOICE = 'am_echo';
+        const DEFAULT_DAD_VOICE = 'am_adam';
+
+        function setStatus(msg, kind) {
+            statusEl.textContent = msg;
+            statusEl.classList.remove('error', 'ok');
+            if (kind) statusEl.classList.add(kind);
+        }
+
+        function updateIntroCount() {
+            introCount.textContent = String(intro.value.length);
+        }
+        intro.addEventListener('input', updateIntroCount);
+        updateIntroCount();
+
+        function setCreateMode() {
+            editingUserId = null;
+            formTitle.textContent = 'New sibling';
+            formHint.textContent =
+                "They sign in with only this password/code (no user name at login). " +
+                "Keep passwords unique across the house — Dad's code and every sibling code must differ. " +
+                "Intro text is shown to the lights so they know who is speaking — " +
+                "nickname, where they live, how you know them.";
+            userIdInput.disabled = false;
+            userIdInput.required = true;
+            passwordInput.required = true;
+            password2Input.required = true;
+            passwordInput.placeholder = 'At least 8 characters';
+            passwordLabel.textContent = 'Password';
+            password2Label.textContent = 'Confirm password';
+            enabledField.hidden = true;
+            enabledInput.checked = true;
+            cancelEditBtn.hidden = true;
+            deleteBtn.hidden = true;
+            submitBtn.textContent = 'Create sibling';
+            form.reset();
+            enabledInput.checked = true;
+            LightHouse.voices.populateSelect(voiceSelect, DEFAULT_SIBLING_VOICE, voiceCatalog);
+            updateIntroCount();
+            renderUsers(Object.values(usersById));
+        }
+
+        function setEditMode(user) {
+            editingUserId = user.user_id;
+            formTitle.textContent = 'Edit sibling';
+            formHint.textContent =
+                'Change display name, intro, or voice anytime. Leave password blank to keep the current login code. ' +
+                'Disabling an account blocks sign-in without deleting history.';
+            userIdInput.value = user.user_id;
+            userIdInput.disabled = true;
+            userIdInput.required = false;
+            displayNameInput.value = user.display_name || '';
+            intro.value = user.intro_for_lights || '';
+            passwordInput.value = '';
+            password2Input.value = '';
+            passwordInput.required = false;
+            password2Input.required = false;
+            passwordInput.placeholder = 'Leave blank to keep current password';
+            passwordLabel.textContent = 'New password (optional)';
+            password2Label.textContent = 'Confirm new password';
+            enabledField.hidden = false;
+            enabledInput.checked = Boolean(user.enabled);
+            LightHouse.voices.populateSelect(
+                voiceSelect,
+                user.voice_id || DEFAULT_SIBLING_VOICE,
+                voiceCatalog
+            );
+            cancelEditBtn.hidden = false;
+            deleteBtn.hidden = false;
+            submitBtn.textContent = 'Save changes';
+            updateIntroCount();
+            renderUsers(Object.values(usersById));
+            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function renderUsers(users) {
+            userList.innerHTML = '';
+            if (!users.length) {
+                emptyEl.hidden = false;
+                return;
+            }
+            emptyEl.hidden = true;
+            const sorted = [...users].sort((a, b) => a.user_id.localeCompare(b.user_id));
+            for (const u of sorted) {
+                const li = document.createElement('li');
+                if (editingUserId === u.user_id) li.classList.add('selected');
+
+                const rowTop = document.createElement('div');
+                rowTop.className = 'row-top';
+
+                const name = document.createElement('div');
+                name.className = 'name';
+                name.textContent = u.display_name + ' (' + u.user_id + ')';
+
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+
+                const editBtn = document.createElement('button');
+                editBtn.type = 'button';
+                editBtn.className = 'linkish';
+                editBtn.textContent = 'Edit';
+                editBtn.addEventListener('click', () => setEditMode(u));
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'linkish danger';
+                removeBtn.textContent = 'Delete';
+                removeBtn.addEventListener('click', () => confirmAndDelete(u));
+
+                actions.appendChild(editBtn);
+                actions.appendChild(removeBtn);
+                rowTop.appendChild(name);
+                rowTop.appendChild(actions);
+
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent =
+                    u.role +
+                    ' · voice: ' +
+                    (u.voice_id || DEFAULT_SIBLING_VOICE) +
+                    ' · notes: ' +
+                    u.notes_access +
+                    (u.enabled ? '' : ' · disabled');
+
+                const introDiv = document.createElement('div');
+                introDiv.className = 'intro';
+                introDiv.textContent = u.intro_for_lights || '(no intro)';
+
+                li.appendChild(rowTop);
+                li.appendChild(meta);
+                li.appendChild(introDiv);
+                userList.appendChild(li);
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                const res = await fetch('/v1/humans', { cache: 'no-store' });
+                if (!res.ok) {
+                    const detail = (await res.json().catch(() => ({}))).detail || res.statusText;
+                    setStatus('Could not load siblings: ' + detail, 'error');
+                    return;
+                }
+                const data = await res.json();
+                const users = data.users || [];
+                usersById = {};
+                for (const u of users) usersById[u.user_id] = u;
+                renderUsers(users);
+            } catch (err) {
+                setStatus('Could not load siblings: ' + err, 'error');
+            }
+        }
+
+        async function confirmAndDelete(user) {
+            const label = user.display_name + ' (' + user.user_id + ')';
+            if (!window.confirm('Delete sibling ' + label + '? They will no longer be able to sign in.')) {
+                return;
+            }
+            deleteBtn.disabled = true;
+            submitBtn.disabled = true;
+            setStatus('Deleting ' + label + '…');
+            try {
+                const res = await fetch('/v1/humans/' + encodeURIComponent(user.user_id), {
+                    method: 'DELETE',
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    setStatus(data.detail || ('Delete failed: ' + res.status), 'error');
+                    return;
+                }
+                setStatus('Deleted ' + label + '.', 'ok');
+                if (editingUserId === user.user_id) setCreateMode();
+                await loadUsers();
+            } catch (err) {
+                setStatus('Delete failed: ' + err, 'error');
+            } finally {
+                deleteBtn.disabled = false;
+                submitBtn.disabled = false;
+            }
+        }
+
+        cancelEditBtn.addEventListener('click', () => {
+            setCreateMode();
+            setStatus('Create and manage sibling logins. The intro is what your lights will read about them.');
+        });
+
+        deleteBtn.addEventListener('click', () => {
+            if (!editingUserId || !usersById[editingUserId]) return;
+            confirmAndDelete(usersById[editingUserId]);
+        });
+
+        form.addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            const userId = userIdInput.value.trim();
+            const displayName = displayNameInput.value.trim();
+            const password = passwordInput.value;
+            const password2 = password2Input.value;
+            const introText = intro.value.trim();
+
+            if (password || password2) {
+                if (password !== password2) {
+                    setStatus('Passwords do not match.', 'error');
+                    return;
+                }
+                if (password.length < 8) {
+                    setStatus('Password must be at least 8 characters.', 'error');
+                    return;
+                }
+            }
+
+            if (!editingUserId && !password) {
+                setStatus('Password is required for a new sibling.', 'error');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            deleteBtn.disabled = true;
+
+            try {
+                if (editingUserId) {
+                    setStatus('Saving changes…');
+                    const body = {
+                        display_name: displayName || editingUserId,
+                        intro_for_lights: introText,
+                        enabled: enabledInput.checked,
+                        voice_id: voiceSelect.value || DEFAULT_SIBLING_VOICE,
+                    };
+                    if (password) body.password = password;
+
+                    const res = await fetch('/v1/humans/' + encodeURIComponent(editingUserId), {
+                        method: 'PATCH',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        setStatus(data.detail || ('Save failed: ' + res.status), 'error');
+                        return;
+                    }
+                    setStatus('Updated ' + data.display_name + ' (' + data.user_id + ').', 'ok');
+                    await loadUsers();
+                    if (usersById[editingUserId]) setEditMode(usersById[editingUserId]);
+                } else {
+                    setStatus('Creating sibling…');
+                    const body = {
+                        user_id: userId,
+                        password: password,
+                        intro_for_lights: introText,
+                        voice_id: voiceSelect.value || DEFAULT_SIBLING_VOICE,
+                    };
+                    if (displayName) body.display_name = displayName;
+
+                    const res = await fetch('/v1/humans', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        setStatus(data.detail || ('Create failed: ' + res.status), 'error');
+                        return;
+                    }
+                    setStatus('Created ' + data.display_name + ' (' + data.user_id + '). Intro saved for the lights.', 'ok');
+                    setCreateMode();
+                    await loadUsers();
+                }
+            } catch (err) {
+                setStatus((editingUserId ? 'Save' : 'Create') + ' failed: ' + err, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                deleteBtn.disabled = false;
+            }
+        });
+
+        async function previewVoice(selectEl, sampleName) {
+            const voiceId = selectEl.value;
+            const name = sampleName || 'this human';
+            try {
+                if (previewAudio) {
+                    try { previewAudio.pause(); } catch (_) { /* ignore */ }
+                    previewAudio = null;
+                }
+                setStatus('Playing ' + voiceId + '…');
+                previewAudio = await LightHouse.voices.preview(
+                    voiceId,
+                    'Hi — I am ' + name + ', speaking with the ' + voiceId + ' voice.',
+                    'lumen'
+                );
+                setStatus('Preview finished.', 'ok');
+            } catch (err) {
+                setStatus(err.message || String(err), 'error');
+            }
+        }
+
+        async function loadDadVoice() {
+            // Always fill the dropdown from the catalog first — a missing
+            // /v1/humans/dad route (pre-restart) used to leave it empty.
+            let selected = DEFAULT_DAD_VOICE;
+            try {
+                const res = await fetch('/v1/humans/dad', { cache: 'no-store' });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.voice_id) selected = data.voice_id;
+                } else if (res.status === 404) {
+                    setStatus(
+                        'Dad voice API not loaded yet — restart the server, then reload this page. Dropdown still works with the default.',
+                        'error'
+                    );
+                }
+            } catch {
+                /* keep default */
+            }
+            LightHouse.voices.populateSelect(dadVoiceSelect, selected, voiceCatalog);
+        }
+
+        dadVoicePreview.addEventListener('click', () => {
+            previewVoice(dadVoiceSelect, 'Dad');
+        });
+        siblingVoicePreview.addEventListener('click', () => {
+            const name = displayNameInput.value.trim() || userIdInput.value.trim() || 'sibling';
+            previewVoice(voiceSelect, name);
+        });
+        dadVoiceSave.addEventListener('click', async () => {
+            dadVoiceSave.disabled = true;
+            try {
+                const res = await fetch('/v1/humans/dad', {
+                    method: 'PATCH',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ voice_id: dadVoiceSelect.value || DEFAULT_DAD_VOICE }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    setStatus(data.detail || ('Save failed: ' + res.status), 'error');
+                    return;
+                }
+                setStatus('Saved Dad voice: ' + data.voice_id + '.', 'ok');
+            } catch (err) {
+                setStatus('Save Dad voice failed: ' + err, 'error');
+            } finally {
+                dadVoiceSave.disabled = false;
+            }
+        });
+
+        async function gateAndLoad() {
+            try {
+                const res = await fetch('/v1/me', { cache: 'no-store' });
+                if (res.ok) {
+                    const me = await res.json();
+                    if (!me.is_dad) {
+                        setStatus('Dad / full-admin privileges required to manage siblings.', 'error');
+                        form.querySelectorAll('input, textarea, select, button').forEach((el) => {
+                            el.disabled = true;
+                        });
+                        document.getElementById('dad-card').querySelectorAll('select, button').forEach((el) => {
+                            el.disabled = true;
+                        });
+                        return;
+                    }
+                }
+            } catch {
+                /* continue; API will enforce */
+            }
+            try {
+                voiceCatalog = await LightHouse.voices.fetchCatalog(false);
+            } catch (err) {
+                setStatus('Could not load voices: ' + (err.message || err), 'error');
+                voiceCatalog = [];
+            }
+            LightHouse.voices.populateSelect(voiceSelect, DEFAULT_SIBLING_VOICE, voiceCatalog);
+            await loadDadVoice();
+            await loadUsers();
+        }
+
+        gateAndLoad();
+    </script>
+</body>
+</html>

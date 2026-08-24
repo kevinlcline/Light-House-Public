@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>Guests — Light-House</title>
+    <script src="/static/ui/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css">
+    <link rel="stylesheet" href="/static/ui/base.css">
+    <link rel="stylesheet" href="/static/ui/layout.css">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=guestdesc1">
+    <style>
+        .guests-page {
+            max-width: 520px;
+            margin: 0 auto;
+            padding: 24px 16px 40px;
+        }
+        .guests-page h1 {
+            margin: 0 0 8px;
+            font-size: 1.4rem;
+        }
+        .guests-page .lede {
+            margin: 0 0 20px;
+            opacity: 0.8;
+            line-height: 1.45;
+        }
+        .guest-card {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding: 14px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            background: var(--bg-input-area, transparent);
+        }
+        .guest-card label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 0.9rem;
+        }
+        .guest-card input {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 16px;
+            font-family: inherit;
+        }
+        .guest-card .hint {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            line-height: 1.35;
+        }
+        .guest-card .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .guest-card button {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            background: var(--accent);
+            color: #fff;
+        }
+        .guest-card button.secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+        }
+        #status {
+            min-height: 1.2em;
+            margin-top: 12px;
+            font-size: 0.9rem;
+            opacity: 0.85;
+        }
+        #status.error { color: #ef9a9a; opacity: 1; }
+        #status.ok { color: #a5d6a7; opacity: 1; }
+        .nav-row {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="guests-page">
+        <div class="nav-row">
+            <a class="linkish" href="/">1:1 chat</a>
+            <a class="linkish" href="/group.html">Group</a>
+        </div>
+        <h1>House guests</h1>
+        <p class="lede">
+            Sign people in who are present with you. Lights see these names house-wide,
+            plus a short note about who they are. On chat pages use <strong>Speak as</strong>
+            to attribute each message.
+        </p>
+        <div class="guest-card">
+            <label>
+                Guest 1
+                <input id="guest-1" type="text" maxlength="40" placeholder="e.g. Joey" autocomplete="off" />
+            </label>
+            <label>
+                Who they are
+                <input id="guest-1-desc" type="text" maxlength="160"
+                       placeholder="One sentence for the lights, e.g. Kevin's friend visiting from Austin"
+                       autocomplete="off" />
+            </label>
+            <div class="hint">Optional. Helps the lights greet them appropriately.</div>
+            <div class="actions">
+                <button type="button" id="sign-1">Sign in</button>
+                <button type="button" class="secondary" id="clear-1">Clear</button>
+            </div>
+        </div>
+        <div class="guest-card">
+            <label>
+                Guest 2
+                <input id="guest-2" type="text" maxlength="40" placeholder="Optional" autocomplete="off" />
+            </label>
+            <label>
+                Who they are
+                <input id="guest-2-desc" type="text" maxlength="160"
+                       placeholder="One sentence for the lights"
+                       autocomplete="off" />
+            </label>
+            <div class="hint">Optional.</div>
+            <div class="actions">
+                <button type="button" id="sign-2">Sign in</button>
+                <button type="button" class="secondary" id="clear-2">Clear</button>
+            </div>
+        </div>
+        <div id="status"></div>
+    </div>
+    <script src="/static/ui/theme.js"></script>
+    <script src="/static/ui/house-guests.js"></script>
+    <script>
+        const statusEl = document.getElementById('status');
+        const inputs = {
+            'guest-1': document.getElementById('guest-1'),
+            'guest-2': document.getElementById('guest-2'),
+        };
+        const descs = {
+            'guest-1': document.getElementById('guest-1-desc'),
+            'guest-2': document.getElementById('guest-2-desc'),
+        };
+
+        function setStatus(msg, kind) {
+            statusEl.textContent = msg || '';
+            statusEl.classList.remove('error', 'ok');
+            if (kind) statusEl.classList.add(kind);
+        }
+
+        function statusLabel(g) {
+            const blurb = (g.description || '').trim();
+            return blurb ? (g.display_name + ' — ' + blurb) : g.display_name;
+        }
+
+        async function refresh() {
+            const guests = await LightHouse.houseGuests.fetchGuests();
+            inputs['guest-1'].value = '';
+            inputs['guest-2'].value = '';
+            descs['guest-1'].value = '';
+            descs['guest-2'].value = '';
+            for (const g of guests) {
+                if (inputs[g.speaker_id]) inputs[g.speaker_id].value = g.display_name || '';
+                if (descs[g.speaker_id]) descs[g.speaker_id].value = g.description || '';
+            }
+            if (guests.length === 0) setStatus('No guests signed in.', null);
+            else setStatus('Signed in: ' + guests.map(statusLabel).join('; '), 'ok');
+        }
+
+        async function signIn(slot) {
+            const name = inputs[slot].value.trim();
+            if (!name) {
+                setStatus('Enter a name first.', 'error');
+                return;
+            }
+            const description = descs[slot].value.trim();
+            const res = await fetch('/v1/house/guests/' + encodeURIComponent(slot), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ display_name: name, description: description }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setStatus(typeof data.detail === 'string' ? data.detail : 'Sign-in failed', 'error');
+                return;
+            }
+            await refresh();
+        }
+
+        async function clearSlot(slot) {
+            const res = await fetch('/v1/house/guests/' + encodeURIComponent(slot), {
+                method: 'DELETE',
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                setStatus(typeof data.detail === 'string' ? data.detail : 'Clear failed', 'error');
+                return;
+            }
+            await refresh();
+        }
+
+        document.getElementById('sign-1').addEventListener('click', () => signIn('guest-1'));
+        document.getElementById('sign-2').addEventListener('click', () => signIn('guest-2'));
+        document.getElementById('clear-1').addEventListener('click', () => clearSlot('guest-1'));
+        document.getElementById('clear-2').addEventListener('click', () => clearSlot('guest-2'));
+
+        refresh().catch((err) => setStatus(err.message || 'Load failed', 'error'));
+    </script>
+</body>
+</html>

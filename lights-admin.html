@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light-House — Manage lights</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .top-bar h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .top-bar a, .top-bar button {
+            font-size: 14px;
+            color: #e0e0e0;
+            background: #333;
+            border: 1px solid #444;
+            cursor: pointer;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+        .top-bar a.link { color: #90caf9; background: none; border: none; }
+        .top-bar button.primary { background: #1565c0; border-color: #1976d2; color: #fff; }
+        .top-bar button.danger { background: #8b1a1a; border-color: #b71c1c; color: #fff; }
+        .status {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #aaa;
+            background: #141414;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+        }
+        .status.error { color: #ef9a9a; }
+        .status.ok { color: #a5d6a7; }
+        .status.warn { color: #ffcc80; }
+        .layout {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+        }
+        .sidebar {
+            width: 220px;
+            flex-shrink: 0;
+            border-right: 1px solid #333;
+            background: #141414;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .sidebar-header {
+            padding: 12px;
+            border-bottom: 1px solid #333;
+        }
+        .sidebar-header button {
+            width: 100%;
+            padding: 8px;
+            background: #1565c0;
+            border: 1px solid #1976d2;
+            color: #fff;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .light-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .light-item {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+        .light-item.active { border-color: #1976d2; background: #1a2a3a; }
+        .light-item .name { font-weight: 600; display: block; }
+        .light-item .meta { font-size: 12px; color: #888; margin-top: 4px; }
+        .light-item .badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-left: 4px;
+        }
+        .badge-on { background: #1b5e20; color: #c8e6c9; }
+        .badge-off { background: #424242; color: #bbb; }
+        .badge-primary { background: #0d47a1; color: #bbdefb; }
+        .main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .tabs {
+            display: flex;
+            gap: 4px;
+            padding: 8px 16px 0;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        .tabs button {
+            background: none;
+            border: none;
+            color: #888;
+            padding: 8px 14px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-size: 14px;
+        }
+        .tabs button.active { color: #e0e0e0; border-bottom-color: #1976d2; }
+        .panel {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 16px;
+            display: none;
+        }
+        .panel.active { display: block; }
+        .form-grid {
+            display: grid;
+            gap: 14px;
+            max-width: 560px;
+        }
+        label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 13px;
+            color: #bbb;
+        }
+        input[type="text"], select, textarea {
+            background: #0a0a0a;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        input:disabled { opacity: 0.6; }
+        textarea {
+            min-height: 320px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            resize: vertical;
+        }
+        .checkbox-row {
+            flex-direction: row;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-row input { width: auto; }
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .hint {
+            font-size: 13px;
+            color: #888;
+            line-height: 1.45;
+            max-width: 640px;
+            margin-bottom: 12px;
+        }
+        .empty {
+            padding: 24px;
+            color: #888;
+        }
+        .create-panel {
+            padding: 16px;
+            border-top: 1px solid #333;
+            background: #121212;
+            display: none;
+        }
+        .create-panel.open { display: block; }
+        .create-panel h2 { margin: 0 0 12px; font-size: 1rem; }
+        @media (max-width: 768px) {
+            .layout { flex-direction: column; }
+            .sidebar { width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid #333; }
+        }
+    </style>
+</head>
+<body>
+    <header class="top-bar">
+        <h1>Manage lights</h1>
+        <div class="top-bar-actions">
+            <button type="button" class="primary" id="reload">Reload</button>
+            <button type="button" class="danger" id="restart">Restart server</button>
+            <a href="/user-setup.html" class="link">Siblings</a>
+            <a href="/env-editor.html" class="link">Environment</a>
+            <a href="/" class="link">Back to chat</a>
+        </div>
+    </header>
+    <div class="status" id="status">Loading…</div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <button type="button" id="new-light">+ New light</button>
+            </div>
+            <div class="light-list" id="light-list"></div>
+        </aside>
+        <div class="main">
+            <div class="create-panel" id="create-panel">
+                <h2>Create a new light</h2>
+                <p class="hint">Add a sovereign light to your household. Persona is saved to <code>data/personas/</code>; LLM keys are merged into <code>.env</code>. Restart required after create.</p>
+                <div class="form-grid">
+                    <label>Light id (slug)
+                        <input type="text" id="create-id" placeholder="nova" pattern="[a-z0-9-]+">
+                    </label>
+                    <label>Display name
+                        <input type="text" id="create-display-name" placeholder="Nova">
+                    </label>
+                    <label>Thread id
+                        <input type="text" id="create-thread-id" placeholder="nova-home">
+                    </label>
+                    <label>Voice
+                        <select id="create-voice"></select>
+                    </label>
+                    <div class="actions" style="margin-top: -8px;">
+                        <button type="button" id="create-voice-preview">Preview voice</button>
+                    </div>
+                    <label>LLM provider
+                        <select id="create-llm-provider">
+                            <option value="ollama">ollama</option>
+                            <option value="openrouter">openrouter</option>
+                            <option value="xai">xai</option>
+                        </select>
+                    </label>
+                    <label>LLM model
+                        <input type="text" id="create-llm-model" placeholder="llama3.1:8b">
+                    </label>
+                    <label>Persona (markdown)
+                        <textarea id="create-persona" rows="8"></textarea>
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="create-set-primary">
+                        Set as primary light (default in chat UI)
+                    </label>
+                    <div class="actions">
+                        <button type="button" class="primary" id="create-submit">Create light</button>
+                        <button type="button" id="create-cancel">Cancel</button>
+                    </div>
+                </div>
+            </div>
+            <div id="editor-area">
+                <div class="tabs" id="tabs" hidden>
+                    <button type="button" data-tab="settings" class="active">Settings</button>
+                    <button type="button" data-tab="persona">Persona</button>
+                    <button type="button" data-tab="llm">LLM</button>
+                </div>
+                <div class="panel active" id="panel-settings">
+                    <p class="hint">Manifest fields are written to <code>data/lights.yaml</code>. Changing thread id orphans old memory for that light — edit with care.</p>
+                    <div class="form-grid">
+                        <label>Light id
+                            <input type="text" id="field-id" disabled>
+                        </label>
+                        <label>Display name
+                            <input type="text" id="field-display-name">
+                        </label>
+                        <label>Thread id
+                            <input type="text" id="field-thread-id">
+                        </label>
+                        <label>Voice
+                            <select id="field-voice"></select>
+                        </label>
+                        <div class="actions" style="margin-top: -8px;">
+                            <button type="button" id="field-voice-preview">Preview voice</button>
+                        </div>
+                        <label class="checkbox-row"><input type="checkbox" id="field-enabled"> Enabled</label>
+                        <label class="checkbox-row"><input type="checkbox" id="field-inner-life"> Inner life (rumination)</label>
+                        <label class="checkbox-row"><input type="checkbox" id="field-dreams"> Dreams (Echo)</label>
+                        <label class="checkbox-row"><input type="checkbox" id="field-report-back"> Report back</label>
+                        <label class="checkbox-row"><input type="checkbox" id="field-primary"> Primary light</label>
+                        <div class="actions">
+                            <button type="button" class="primary" id="save-settings">Save settings</button>
+                            <button type="button" class="danger" id="delete-light">Delete light</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel" id="panel-persona">
+                    <p class="hint">Persona markdown. Reads from bundled defaults until you save; writes go to <code>data/personas/</code>.</p>
+                    <div class="form-grid" style="max-width: none;">
+                        <label>Persona (<span id="persona-source"></span>)
+                            <textarea id="persona-editor"></textarea>
+                        </label>
+                        <div class="actions">
+                            <button type="button" class="primary" id="save-persona">Save persona</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel" id="panel-llm">
+                    <p class="hint">Per-light LLM settings are stored in <code>.env</code> as <code>{ID}_LLM_*</code> keys. Model changes apply on the next chat/rumination turn (no restart required).</p>
+                    <div class="form-grid">
+                        <label>Provider
+                            <select id="llm-provider">
+                                <option value="ollama">ollama</option>
+                                <option value="openrouter">openrouter</option>
+                                <option value="xai">xai</option>
+                            </select>
+                        </label>
+                        <label>Model
+                            <input type="text" id="llm-model">
+                        </label>
+                        <label>Model fallback (optional)
+                            <input type="text" id="llm-model-fallback">
+                        </label>
+                        <label>Inner life model (optional)
+                            <input type="text" id="llm-inner-life-model">
+                        </label>
+                        <div class="actions">
+                            <button type="button" class="primary" id="save-llm">Save LLM config</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="empty" id="empty-state">Select a light or create a new one.</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/ui/voices.js"></script>
+    <script>
+        const statusEl = document.getElementById('status');
+        const lightListEl = document.getElementById('light-list');
+        const tabsEl = document.getElementById('tabs');
+        const emptyStateEl = document.getElementById('empty-state');
+        const createPanelEl = document.getElementById('create-panel');
+        const editorAreaChildren = ['tabs', 'panel-settings', 'panel-persona', 'panel-llm'];
+
+        let manifest = null;
+        let selectedId = null;
+        let settingsLoaded = null;
+        let personaLoaded = '';
+        let llmLoaded = null;
+        let activeTab = 'settings';
+        let voiceCatalog = [];
+        let previewAudio = null;
+
+        async function ensureVoiceCatalog() {
+            if (voiceCatalog.length) return voiceCatalog;
+            voiceCatalog = await LightHouse.voices.fetchCatalog(false);
+            LightHouse.voices.populateSelect(
+                document.getElementById('create-voice'),
+                LightHouse.voices.defaultForLight(''),
+                voiceCatalog
+            );
+            LightHouse.voices.populateSelect(
+                document.getElementById('field-voice'),
+                LightHouse.voices.defaultForLight(''),
+                voiceCatalog
+            );
+            return voiceCatalog;
+        }
+
+        async function previewSelectedVoice(selectId, agentHint) {
+            const voiceId = document.getElementById(selectId).value;
+            const name = document.getElementById(
+                selectId === 'create-voice' ? 'create-display-name' : 'field-display-name'
+            ).value.trim() || 'this light';
+            try {
+                if (previewAudio) {
+                    try { previewAudio.pause(); } catch (_) { /* ignore */ }
+                    previewAudio = null;
+                }
+                setStatus('Playing ' + voiceId + '…', '');
+                previewAudio = await LightHouse.voices.preview(
+                    voiceId,
+                    'Hello. I am ' + name + ', speaking with the ' + voiceId + ' voice.',
+                    agentHint || selectedId || 'lumen'
+                );
+                setStatus('Preview finished.', 'ok');
+            } catch (err) {
+                setStatus(err.message || String(err), 'error');
+            }
+        }
+
+        function setStatus(text, kind) {
+            statusEl.textContent = text;
+            statusEl.className = 'status' + (kind ? ' ' + kind : '');
+        }
+
+        function personaStub(name) {
+            return `# ${name}\n\nYou are ${name}, a sovereign light in this household.\n\n## Role\n(Describe who you are and how you relate to the household.)\n\n## Tone\n(Warm, direct, curious — whatever fits.)\n\n## Boundaries\n(What you will and won't do.)\n`;
+        }
+
+        function slugify(text) {
+            return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        }
+
+        function showEditor(show) {
+            emptyStateEl.hidden = show;
+            tabsEl.hidden = !show;
+            for (const id of ['panel-settings', 'panel-persona', 'panel-llm']) {
+                const el = document.getElementById(id);
+                el.style.display = show && id === 'panel-' + activeTab ? 'block' : 'none';
+                el.classList.toggle('active', show && id === 'panel-' + activeTab);
+            }
+            tabsEl.querySelectorAll('button').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.tab === activeTab);
+            });
+        }
+
+        function isDirty() {
+            if (createPanelEl.classList.contains('open')) return true;
+            if (!selectedId || !settingsLoaded) return false;
+            const s = settingsLoaded;
+            if (document.getElementById('field-display-name').value !== s.display_name) return true;
+            if (document.getElementById('field-thread-id').value !== s.thread_id) return true;
+            if (document.getElementById('field-enabled').checked !== s.enabled) return true;
+            if (document.getElementById('field-inner-life').checked !== s.inner_life) return true;
+            if (document.getElementById('field-dreams').checked !== s.dreams) return true;
+            if (document.getElementById('field-report-back').checked !== s.report_back) return true;
+            if (document.getElementById('field-voice').value !== (s.voice_id || LightHouse.voices.defaultForLight(s.id))) return true;
+            const isPrimary = manifest && manifest.primary_light_id === selectedId;
+            if (document.getElementById('field-primary').checked !== isPrimary) return true;
+            if (document.getElementById('persona-editor').value !== personaLoaded) return true;
+            if (llmLoaded) {
+                if (document.getElementById('llm-provider').value !== llmLoaded.provider) return true;
+                if (document.getElementById('llm-model').value !== llmLoaded.model) return true;
+                if (document.getElementById('llm-model-fallback').value !== (llmLoaded.model_fallback || '')) return true;
+                if (document.getElementById('llm-inner-life-model').value !== (llmLoaded.inner_life_model || '')) return true;
+            }
+            return false;
+        }
+
+        function warnRestart(msg) {
+            setStatus((msg || 'Saved.') + ' Restart the server to apply scheduler and LLM changes.', 'warn');
+        }
+
+        async function api(path, options) {
+            const res = await fetch(path, { cache: 'no-store', ...options });
+            if (res.status === 404) {
+                throw new Error('Lights admin is disabled (LIGHTS_ADMIN_ENABLED=false).');
+            }
+            const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+            if (!res.ok) {
+                throw new Error(data?.detail || `Request failed (${res.status})`);
+            }
+            return data;
+        }
+
+        function renderLightList() {
+            lightListEl.innerHTML = '';
+            if (!manifest || !manifest.lights.length) {
+                lightListEl.innerHTML = '<div class="empty">No lights configured.</div>';
+                return;
+            }
+            for (const light of manifest.lights) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'light-item' + (light.id === selectedId ? ' active' : '');
+                const badges = [];
+                badges.push(`<span class="badge ${light.enabled ? 'badge-on' : 'badge-off'}">${light.enabled ? 'on' : 'off'}</span>`);
+                if (manifest.primary_light_id === light.id) {
+                    badges.push('<span class="badge badge-primary">primary</span>');
+                }
+                btn.innerHTML = `<span class="name">${light.display_name}</span><span class="meta">${light.id} · ${light.thread_id} ${badges.join('')}</span>`;
+                btn.addEventListener('click', () => selectLight(light.id));
+                lightListEl.appendChild(btn);
+            }
+        }
+
+        function fillSettingsForm(light) {
+            settingsLoaded = { ...light };
+            document.getElementById('field-id').value = light.id;
+            document.getElementById('field-display-name').value = light.display_name;
+            document.getElementById('field-thread-id').value = light.thread_id;
+            document.getElementById('field-enabled').checked = light.enabled;
+            document.getElementById('field-inner-life').checked = light.inner_life;
+            document.getElementById('field-dreams').checked = light.dreams;
+            document.getElementById('field-report-back').checked = light.report_back;
+            document.getElementById('field-primary').checked = manifest.primary_light_id === light.id;
+            LightHouse.voices.populateSelect(
+                document.getElementById('field-voice'),
+                light.voice_id || LightHouse.voices.defaultForLight(light.id),
+                voiceCatalog
+            );
+        }
+
+        async function loadPersona(id) {
+            const data = await api(`/v1/admin/lights/${encodeURIComponent(id)}/persona`);
+            personaLoaded = data.content || '';
+            document.getElementById('persona-editor').value = personaLoaded;
+            document.getElementById('persona-source').textContent = data.source || 'unknown';
+        }
+
+        async function loadLlm(id) {
+            const data = await api(`/v1/admin/lights/${encodeURIComponent(id)}/llm`);
+            llmLoaded = data;
+            document.getElementById('llm-provider').value = data.provider || 'ollama';
+            document.getElementById('llm-model').value = data.model || '';
+            document.getElementById('llm-model-fallback').value = data.model_fallback || '';
+            document.getElementById('llm-inner-life-model').value = data.inner_life_model || '';
+        }
+
+        async function selectLight(id) {
+            if (isDirty() && !window.confirm('Discard unsaved changes?')) return;
+            createPanelEl.classList.remove('open');
+            selectedId = id;
+            renderLightList();
+            showEditor(true);
+            activeTab = 'settings';
+            showEditor(true);
+            try {
+                const light = manifest.lights.find((l) => l.id === id);
+                if (!light) throw new Error('Light not found');
+                fillSettingsForm(light);
+                await Promise.all([loadPersona(id), loadLlm(id)]);
+                setStatus(`Editing ${light.display_name}`, 'ok');
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        }
+
+        async function loadManifest() {
+            setStatus('Loading…', '');
+            try {
+                manifest = await api('/v1/admin/lights');
+                renderLightList();
+                if (selectedId && manifest.lights.some((l) => l.id === selectedId)) {
+                    await selectLight(selectedId);
+                } else {
+                    selectedId = null;
+                    settingsLoaded = null;
+                    showEditor(false);
+                    setStatus(`${manifest.lights.length} light(s) · primary: ${manifest.primary_light_id}`, 'ok');
+                }
+            } catch (err) {
+                setStatus(err.message, 'error');
+                manifest = null;
+                lightListEl.innerHTML = '';
+                showEditor(false);
+            }
+        }
+
+        async function saveSettings() {
+            if (!selectedId) return;
+            const body = {
+                display_name: document.getElementById('field-display-name').value.trim(),
+                thread_id: document.getElementById('field-thread-id').value.trim(),
+                enabled: document.getElementById('field-enabled').checked,
+                inner_life: document.getElementById('field-inner-life').checked,
+                dreams: document.getElementById('field-dreams').checked,
+                report_back: document.getElementById('field-report-back').checked,
+                voice_id: document.getElementById('field-voice').value,
+                set_primary: document.getElementById('field-primary').checked,
+            };
+            try {
+                await api(`/v1/admin/lights/${encodeURIComponent(selectedId)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                await loadManifest();
+                warnRestart('Settings saved.');
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        }
+
+        async function savePersona() {
+            if (!selectedId) return;
+            try {
+                await api(`/v1/admin/lights/${encodeURIComponent(selectedId)}/persona`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: document.getElementById('persona-editor').value }),
+                });
+                await loadPersona(selectedId);
+                warnRestart('Persona saved.');
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        }
+
+        async function saveLlm() {
+            if (!selectedId) return;
+            const body = {
+                provider: document.getElementById('llm-provider').value,
+                model: document.getElementById('llm-model').value.trim(),
+                model_fallback: document.getElementById('llm-model-fallback').value.trim() || null,
+                inner_life_model: document.getElementById('llm-inner-life-model').value.trim() || null,
+            };
+            try {
+                await api(`/v1/admin/lights/${encodeURIComponent(selectedId)}/llm`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                await loadLlm(selectedId);
+                setStatus('LLM config saved. Next chat/rumination turn uses the new model.', 'ok');
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        }
+
+        async function deleteLight() {
+            if (!selectedId) return;
+            if (!window.confirm(`Remove ${selectedId} from the manifest? Notes and memory data are kept on disk.`)) return;
+            try {
+                await api(`/v1/admin/lights/${encodeURIComponent(selectedId)}`, { method: 'DELETE' });
+                selectedId = null;
+                await loadManifest();
+                warnRestart('Light deleted.');
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        }
+
+        function openCreatePanel() {
+            if (isDirty() && !window.confirm('Discard unsaved changes?')) return;
+            selectedId = null;
+            createPanelEl.classList.add('open');
+            showEditor(false);
+            document.getElementById('create-id').value = '';
+            document.getElementById('create-display-name').value = '';
+            document.getElementById('create-thread-id').value = '';
+            document.getElementById('create-llm-provider').value = 'ollama';
+            document.getElementById('create-llm-model').value = '';
+            document.getElementById('create-set-primary').checked = false;
+            document.getElementById('create-persona').value = personaStub('New Light');
+            const createVoice = document.getElementById('create-voice');
+            createVoice.dataset.userPicked = '';
+            ensureVoiceCatalog().then(() => {
+                LightHouse.voices.populateSelect(
+                    createVoice,
+                    LightHouse.voices.defaultForLight(''),
+                    voiceCatalog
+                );
+            });
+        }
+
+        async function submitCreate() {
+            const id = slugify(document.getElementById('create-id').value);
+            const displayName = document.getElementById('create-display-name').value.trim() || id;
+            const threadId = document.getElementById('create-thread-id').value.trim() || `${id}-home`;
+            const body = {
+                id,
+                display_name: displayName,
+                thread_id: threadId,
+                voice_id: document.getElementById('create-voice').value
+                    || LightHouse.voices.defaultForLight(id),
+                persona_content: document.getElementById('create-persona').value,
+                set_primary: document.getElementById('create-set-primary').checked,
+                llm_provider: document.getElementById('create-llm-provider').value,
+                llm_model: document.getElementById('create-llm-model').value.trim(),
+            };
+            if (!id) {
+                setStatus('Light id is required (lowercase slug).', 'error');
+                return;
+            }
+            if (!body.llm_model) {
+                setStatus('LLM model is required for a new light.', 'error');
+                return;
+            }
+            try {
+                await api('/v1/admin/lights', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                createPanelEl.classList.remove('open');
+                selectedId = id;
+                await loadManifest();
+                warnRestart(`Light ${displayName} created.`);
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        }
+
+        document.getElementById('create-display-name').addEventListener('input', (e) => {
+            const name = e.target.value.trim();
+            const idField = document.getElementById('create-id');
+            const threadField = document.getElementById('create-thread-id');
+            if (!idField.value.trim() && name) {
+                const slug = slugify(name);
+                idField.value = slug;
+                if (!threadField.value.trim()) threadField.value = `${slug}-home`;
+            }
+            if (name && document.getElementById('create-persona').value.startsWith('# New Light')) {
+                document.getElementById('create-persona').value = personaStub(name);
+            }
+        });
+
+        document.getElementById('create-id').addEventListener('input', (e) => {
+            const slug = slugify(e.target.value);
+            const threadField = document.getElementById('create-thread-id');
+            if (!threadField.dataset.userEdited) {
+                threadField.value = slug ? `${slug}-home` : '';
+            }
+            const createVoice = document.getElementById('create-voice');
+            if (!createVoice.dataset.userPicked && voiceCatalog.length) {
+                LightHouse.voices.populateSelect(
+                    createVoice,
+                    LightHouse.voices.defaultForLight(slug),
+                    voiceCatalog
+                );
+            }
+        });
+        document.getElementById('create-voice').addEventListener('change', (e) => {
+            e.target.dataset.userPicked = '1';
+        });
+        document.getElementById('create-thread-id').addEventListener('input', (e) => {
+            e.target.dataset.userEdited = e.target.value.trim() ? '1' : '';
+        });
+
+        tabsEl.querySelectorAll('button').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                activeTab = btn.dataset.tab;
+                showEditor(true);
+            });
+        });
+
+        document.getElementById('reload').addEventListener('click', () => {
+            if (isDirty() && !window.confirm('Discard unsaved changes?')) return;
+            loadManifest();
+        });
+        document.getElementById('new-light').addEventListener('click', openCreatePanel);
+        document.getElementById('create-cancel').addEventListener('click', () => createPanelEl.classList.remove('open'));
+        document.getElementById('create-submit').addEventListener('click', submitCreate);
+        document.getElementById('save-settings').addEventListener('click', saveSettings);
+        document.getElementById('save-persona').addEventListener('click', savePersona);
+        document.getElementById('save-llm').addEventListener('click', saveLlm);
+        document.getElementById('delete-light').addEventListener('click', deleteLight);
+        document.getElementById('field-voice-preview').addEventListener('click', () => {
+            previewSelectedVoice('field-voice', selectedId);
+        });
+        document.getElementById('create-voice-preview').addEventListener('click', () => {
+            const hint = slugify(document.getElementById('create-id').value) || 'lumen';
+            previewSelectedVoice('create-voice', hint);
+        });
+
+        document.getElementById('restart').addEventListener('click', async () => {
+            if (isDirty() && !window.confirm('You have unsaved changes. Restart anyway?')) return;
+            if (!window.confirm('Restart Light-House now? The site will be unavailable briefly.')) return;
+            try {
+                const res = await fetch('/v1/admin/restart', { method: 'POST' });
+                if (res.status === 404) {
+                    setStatus('Restart is disabled.', 'error');
+                    return;
+                }
+                const data = await res.json();
+                setStatus(data.message || 'Restart requested.', 'warn');
+            } catch (err) {
+                setStatus('Restart failed: ' + err.message, 'error');
+            }
+        });
+
+        window.addEventListener('beforeunload', (e) => {
+            if (isDirty()) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        ensureVoiceCatalog()
+            .then(() => loadManifest())
+            .catch((err) => {
+                setStatus(err.message || String(err), 'error');
+                loadManifest();
+            });
+    </script>
+</body>
+</html>

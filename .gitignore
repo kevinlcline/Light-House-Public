@@ -1,0 +1,75 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Agent notes (private lumen/ + ara/, shared/; keep README stubs)
+notes/*
+!notes/README.md
+!notes/lumen/
+notes/lumen/**
+!notes/lumen/README.md
+!notes/lumen/mailbox/
+notes/lumen/mailbox/**
+!notes/lumen/mailbox/README.md
+!notes/ara/
+notes/ara/**
+!notes/ara/README.md
+!notes/ara/mailbox/
+notes/ara/mailbox/**
+!notes/ara/mailbox/README.md
+!notes/elias/
+notes/elias/**
+!notes/elias/mailbox/
+notes/elias/mailbox/**
+!notes/elias/mailbox/README.md
+!notes/shared/
+notes/shared/**
+!notes/shared/README.md
+!notes/shared/mailbox/
+notes/shared/mailbox/**
+!notes/shared/mailbox/README.md
+!notes/shared/gallery/
+notes/shared/gallery/**
+!notes/shared/gallery/README.md
+!notes/shared/manuals/
+!notes/shared/manuals/**
+
+# Runtime data (Chroma vectors, thread buffers, lights.yaml)
+data/
+ara_memory.json
+light_house_memory.json
+
+# Local TTS model weights (~340MB)
+models/kokoro/*.onnx
+models/kokoro/*.bin
+!models/kokoro/README.md
+
+# Installers / local binaries
+*.deb
+cloudflared-*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
