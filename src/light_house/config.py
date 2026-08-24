@@ -541,7 +541,7 @@ class Settings(BaseSettings):
         default=1, validation_alias="RUMINATION_SIMILARITY_MIN_MATCHES"
     )
 
-    # Public internet gate: landing page + shared password (lighthouse.cc).
+    # Public internet gate: landing page + shared password (light-house.cc).
     web_gate_enabled: bool = Field(default=False, validation_alias="WEB_GATE_ENABLED")
     web_gate_password: str | None = Field(default=None, validation_alias="WEB_GATE_PASSWORD")
     web_gate_session_secret: str | None = Field(
@@ -585,7 +585,7 @@ class Settings(BaseSettings):
     public_base_url: str | None = Field(
         default=None,
         validation_alias="PUBLIC_BASE_URL",
-        description="Public site origin (e.g. https://lighthouse.cc) used to build OAuth redirect if redirect URI unset.",
+        description="Public site origin (e.g. https://light-house.cc) used to build OAuth redirect if redirect URI unset.",
     )
     house_dad_user_id: str = Field(
         default="kevin",

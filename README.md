@@ -41,7 +41,7 @@ Open `http://127.0.0.1:8000` — public visitors see the homepage; invited peopl
 
 ## Links
 
-- **Homepage / story:** [lighthouse.cc](https://lighthouse.cc) *(landing will grow)*  
+- **Homepage / story:** [light-house.cc](https://light-house.cc) *(landing will grow)*  
 - **Engine origin:** developed in private; features sync into this template over time  
 - **YouTube / writing:** linked from the homepage as they ship  
 
