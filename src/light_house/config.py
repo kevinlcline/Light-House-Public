@@ -548,6 +548,11 @@ class Settings(BaseSettings):
         default=None, validation_alias="WEB_GATE_SESSION_SECRET"
     )
     web_gate_session_days: int = Field(default=30, validation_alias="WEB_GATE_SESSION_DAYS")
+    # Landing-page “notify me” emails (public signup; no auth).
+    public_notify_path: Path = Field(
+        default=Path("./data/logs/public_notify.ndjson"),
+        validation_alias="PUBLIC_NOTIFY_PATH",
+    )
 
     # Human guests/members (user-setup.html). Passwords hashed; intros for lights.
     humans_store_path: Path = Field(

@@ -1077,6 +1077,34 @@ def login_page(
     return FileResponse(login_path, headers=NO_STORE_HEADERS)
 
 
+class PublicNotifyRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+
+
+class PublicNotifyResponse(BaseModel):
+    ok: bool = True
+    created: bool
+    message: str
+
+
+@app.post("/v1/public/notify", response_model=PublicNotifyResponse)
+def public_notify_signup(
+    body: PublicNotifyRequest,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Landing-page email list for release updates (no authentication)."""
+    from light_house.public_notify import append_notify_email
+
+    try:
+        created, message = append_notify_email(settings, body.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        logger.exception("public notify signup failed")
+        raise HTTPException(status_code=500, detail="Could not save your email.") from exc
+    return PublicNotifyResponse(created=created, message=message)
+
+
 @app.post("/login")
 async def login_submit(
     request: Request,

@@ -172,6 +172,10 @@ class WebGateMiddleware(BaseHTTPMiddleware):
         if path == "/logout" and method == "POST":
             return await call_next(request)
 
+        # Public homepage notify signup (no session required).
+        if path == "/v1/public/notify" and method == "POST":
+            return await call_next(request)
+
         authed = is_authenticated(request, settings)
 
         if path == "/" and method == "GET":
