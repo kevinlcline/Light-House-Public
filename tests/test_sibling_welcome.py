@@ -41,7 +41,7 @@ def test_welcome_message_has_guide_link() -> None:
     text = sibling_welcome_message()
     assert is_sibling_welcome_message(text)
     assert SIBLING_USER_GUIDE_HREF in text
-    assert "Sibling user guide" in text
+    assert "Member user guide" in text
 
 
 def test_seed_sibling_ui_chat_welcome(tmp_path: Path) -> None:
@@ -129,11 +129,15 @@ def test_create_human_api_seeds_welcome(tmp_path: Path, monkeypatch: pytest.Monk
         app.dependency_overrides.clear()
 
 
-def test_menus_expose_sibling_user_guide() -> None:
+def test_menus_expose_member_user_guide() -> None:
     root = Path(__file__).resolve().parents[1]
+    menu_js = (root / "static" / "ui" / "menu.js").read_text(encoding="utf-8")
+    assert "sibling_user_manual.md" in menu_js
+    assert "siblingOnly" in menu_js or "data-sibling-only" in menu_js
+    assert "User guide" in menu_js
     for name in ("index.html", "notes.html", "group.html", "gallery.html"):
         html = (root / name).read_text(encoding="utf-8")
-        assert "data-sibling-only" in html, name
-        assert "sibling_user_manual.md" in html, name
+        assert "setupHouseMenu" in html, name
+        assert "/static/ui/menu.js" in html, name
     me_js = (root / "static" / "ui" / "me.js").read_text(encoding="utf-8")
     assert "data-sibling-only" in me_js

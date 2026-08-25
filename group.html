@@ -8,9 +8,9 @@
     <script src="/static/ui/theme-init.js"></script>
     <link rel="stylesheet" href="/static/ui/theme.css">
     <link rel="stylesheet" href="/static/ui/base.css">
-    <link rel="stylesheet" href="/static/ui/layout.css?v=menu1">
-    <link rel="stylesheet" href="/static/ui/chat.css?v=forum6">
-    <link rel="stylesheet" href="/static/ui/faces.css?v=emo10">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=chrome2">
+    <link rel="stylesheet" href="/static/ui/faces.css?v=emo12">
     <link rel="stylesheet" href="/static/ui/markdown.css">
 </head>
 <body class="layout-locked">
@@ -31,25 +31,7 @@
                             <line x1="4" y1="17" x2="20" y2="17"/>
                         </svg>
                     </button>
-                    <div class="menu-panel" id="menu-panel" role="menu" hidden>
-                        <a href="/" class="menu-item" role="menuitem">1:1 chat</a>
-                        <a href="/notes.html" class="menu-item" role="menuitem" id="notes-link">Notes</a>
-                        <a href="/gallery.html" class="menu-item" role="menuitem">Gallery</a>
-                        <a href="/guests.html" class="menu-item" role="menuitem">Guests</a>
-                        <a href="/my-tools.html" class="menu-item" role="menuitem">My tools</a>
-                        <a href="/notes.html?file=shared/manuals/sibling_user_manual.md" class="menu-item" role="menuitem" data-sibling-only>User guide</a>
-                        <a href="/dev-log.html" class="menu-item" role="menuitem" data-dad-only>Log</a>
-                        <a href="/rumination-trace.html" class="menu-item" role="menuitem" data-dad-only>Rumination trace</a>
-                        <a href="/lights-admin.html" class="menu-item" role="menuitem" data-dad-only>Manage lights</a>
-                        <a href="/user-setup.html" class="menu-item" role="menuitem" data-dad-only>Siblings</a>
-                        <a href="/env-editor.html" class="menu-item" role="menuitem" data-dad-only>Environment</a>
-                        <button type="button" class="menu-item" id="theme-toggle" role="menuitem">Light theme</button>
-                        <button type="button" class="menu-item" id="voice-toggle" role="menuitem">Voice on</button>
-                        <button type="button" class="menu-item" id="restart-server" role="menuitem" data-dad-only>Restart server</button>
-                        <form method="post" action="/logout" class="logout-form">
-                            <button type="submit" class="menu-item" role="menuitem">Sign out</button>
-                        </form>
-                    </div>
+                    <div class="menu-panel" id="menu-panel" role="menu" hidden></div>
                 </div>
             </div>
         </header>
@@ -59,19 +41,25 @@
         <div class="chat-input forum-input">
             <button type="button" id="join-queue" class="forum-join-btn">I want to speak</button>
             <textarea id="input" placeholder="Join the queue to speak…" rows="2" disabled></textarea>
-            <button id="send" type="button" disabled>Send</button>
+            <div class="chat-input-toolbar">
+                <button id="send" type="button" disabled>Send</button>
+                <div class="chat-input-toggles" role="group" aria-label="Stage and voice">
+                    <button type="button" class="chat-chrome-toggle" id="stage-toggle" data-stage-toggle data-compact aria-pressed="true">Stage</button>
+                    <button type="button" class="chat-chrome-toggle" id="voice-toggle" data-voice-toggle data-compact aria-pressed="false">Voice</button>
+                </div>
+            </div>
         </div>
         <div class="house-status-bar" id="house-status" aria-live="polite"></div>
     </div>
     <script src="/static/ui/theme.js"></script>
     <script src="/static/ui/me.js"></script>
-    <script src="/static/ui/menu.js"></script>
+    <script src="/static/ui/menu.js?v=house3"></script>
     <script src="/static/ui/admin.js"></script>
     <script src="/static/ui/lights.js"></script>
     <script src="/static/ui/house-guests.js?v=speakfocus1"></script>
     <script src="/static/ui/markdown.js?v=notelinks1"></script>
-    <script src="/static/ui/faces.js?v=emo10"></script>
-    <script src="/static/ui/tts.js?v=emo2"></script>
+    <script src="/static/ui/faces.js?v=emo12"></script>
+    <script src="/static/ui/tts.js?v=chrome1"></script>
     <script src="/static/ui/bubble-actions.js?v=copy1"></script>
     <script>
         const messagesDiv = document.getElementById('messages');
@@ -581,17 +569,29 @@
 
         async function init() {
             me = await LightHouse.me.fetchMe();
-            const notesLink = document.getElementById('notes-link');
-            if (notesLink && me && me.is_dad === false) {
-                notesLink.textContent = 'Shared notes';
+            try {
+                if (LightHouse.menu && typeof LightHouse.menu.setupHouseMenu === 'function') {
+                    LightHouse.menu.setupHouseMenu();
+                }
+                const notesLink = document.getElementById('notes-link');
+                if (notesLink && me && me.is_dad === false) {
+                    notesLink.textContent = 'Shared notes';
+                }
+            } catch (err) {
+                console.error('Group menu setup failed:', err);
             }
-            LightHouse.menu.setupMenuDropdown();
-            LightHouse.me.applyDadOnlyVisibility(document.getElementById('menu-panel'));
             await clearFamilyMeetingAsks();
             applyMeetingPrefill();
-            LightHouse.theme.setupThemeToggle('#theme-toggle');
-            LightHouse.faces.mount('#face-stage');
-            LightHouse.admin.bindRestartButton('#restart-server');
+            try {
+                if (LightHouse.faces) {
+                    LightHouse.faces.mount('#face-stage');
+                    if (typeof LightHouse.faces.setupStageToggle === 'function') {
+                        LightHouse.faces.setupStageToggle('#stage-toggle');
+                    }
+                }
+            } catch (err) {
+                console.error('Group stage setup failed:', err);
+            }
             await refreshHouseGuests();
             setInterval(refreshHouseGuests, 15000);
             await loadHumanVoices();
@@ -630,11 +630,15 @@
         .forum-floor strong { color: var(--text-primary); }
         .forum-input {
             display: grid;
-            grid-template-columns: auto 1fr auto;
+            grid-template-columns: auto 1fr;
+            grid-template-areas:
+                "join input"
+                "toolbar toolbar";
             gap: 8px;
             align-items: end;
         }
         .forum-join-btn {
+            grid-area: join;
             font: inherit;
             padding: 8px 12px;
             border-radius: 8px;
@@ -648,6 +652,13 @@
             opacity: 0.6;
             cursor: default;
         }
+        .forum-input #input {
+            grid-area: input;
+            min-width: 0;
+        }
+        .forum-input .chat-input-toolbar {
+            grid-area: toolbar;
+        }
         #house-status {
             display: flex;
             flex-wrap: wrap;
@@ -656,14 +667,13 @@
         }
         @media (max-width: 640px) {
             .forum-input {
-                grid-template-columns: 1fr auto;
+                grid-template-columns: 1fr;
                 grid-template-areas:
-                    "join join"
-                    "input send";
+                    "join"
+                    "input"
+                    "toolbar";
             }
-            .forum-join-btn { grid-area: join; width: 100%; }
-            .forum-input #input { grid-area: input; min-width: 0; }
-            .forum-input #send { grid-area: send; }
+            .forum-join-btn { width: 100%; }
             .forum-queue-bar {
                 font-size: 0.82rem;
                 padding: 6px 12px;

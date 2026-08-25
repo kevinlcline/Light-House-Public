@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-store">
     <title>My tools — Light-House</title>
+    <script src="/static/ui/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -33,12 +36,6 @@
             font-size: 1.1rem;
             font-weight: 600;
         }
-        .top-bar a {
-            font-size: 14px;
-            color: #90caf9;
-            text-decoration: none;
-        }
-        .top-bar a:hover { text-decoration: underline; }
         .status {
             padding: 8px 16px;
             font-size: 13px;
@@ -214,14 +211,23 @@
     </style>
 </head>
 <body>
-    <div class="top-bar">
-        <h1>My tools</h1>
-        <div>
-            <a href="/">Chat</a>
-            &nbsp;·&nbsp;
-            <a href="/notes.html">Notes</a>
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <h1>My tools</h1>
         </div>
-    </div>
+        <div class="top-bar-actions">
+            <div class="menu-dropdown">
+                <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <line x1="4" y1="7" x2="20" y2="7"/>
+                        <line x1="4" y1="12" x2="20" y2="12"/>
+                        <line x1="4" y1="17" x2="20" y2="17"/>
+                    </svg>
+                </button>
+                <div class="menu-panel" id="menu-panel" role="menu" hidden></div>
+            </div>
+        </div>
+    </header>
     <div class="status" id="status">Loading…</div>
     <main class="main">
         <p class="who" id="who">Signed in as —</p>
@@ -340,7 +346,10 @@
         </section>
     </main>
 
+    <script src="/static/ui/theme.js"></script>
     <script src="/static/ui/me.js"></script>
+    <script src="/static/ui/menu.js?v=house3"></script>
+    <script src="/static/ui/admin.js"></script>
     <script>
         const statusEl = document.getElementById('status');
         const whoEl = document.getElementById('who');
@@ -511,6 +520,7 @@
             const detail = params.get('detail');
 
             const me = await LightHouse.me.fetchMe();
+            LightHouse.menu.setupHouseMenu();
             if (!me) {
                 setStatus('Not signed in — open /login first.', 'error');
                 whoEl.textContent = 'Not signed in';

@@ -9,7 +9,7 @@
     <script src="/static/ui/theme-init.js"></script>
     <link rel="stylesheet" href="/static/ui/theme.css">
     <link rel="stylesheet" href="/static/ui/base.css">
-    <link rel="stylesheet" href="/static/ui/layout.css">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
     <link rel="stylesheet" href="/static/ui/markdown.css">
     <link rel="stylesheet" href="/static/ui/notes.css">
 </head>
@@ -45,22 +45,7 @@
                     </svg>
                 </button>
                 <div class="menu-panel" id="menu-panel" role="menu" hidden>
-                    <button type="button" class="menu-item" id="write-shared" role="menuitem">Write shared</button>
-                    <a href="/" class="menu-item" role="menuitem">Back to chat</a>
-                    <a href="/gallery.html" class="menu-item" role="menuitem">Gallery</a>
-                    <a href="/my-tools.html" class="menu-item" role="menuitem">My tools</a>
-                    <a href="/notes.html?file=shared/manuals/sibling_user_manual.md" class="menu-item" role="menuitem" data-sibling-only>User guide</a>
-                    <a href="/group.html" class="menu-item" role="menuitem" data-dad-only>Group chat</a>
-                    <a href="/dev-log.html" class="menu-item" role="menuitem" data-dad-only>Log</a>
-                    <a href="/rumination-trace.html" class="menu-item" role="menuitem" data-dad-only>Rumination trace</a>
-                    <a href="/lights-admin.html" class="menu-item" role="menuitem" data-dad-only>Manage lights</a>
-                    <a href="/user-setup.html" class="menu-item" role="menuitem" data-dad-only>Siblings</a>
-                    <a href="/env-editor.html" class="menu-item" role="menuitem" data-dad-only>Environment</a>
-                    <button type="button" class="menu-item" id="theme-toggle" role="menuitem">Light theme</button>
-                    <button type="button" class="menu-item" id="restart-server" role="menuitem" data-dad-only>Restart server</button>
-                    <form method="post" action="/logout" class="logout-form">
-                        <button type="submit" class="menu-item" role="menuitem">Sign out</button>
-                    </form>
+                    <button type="button" class="menu-item" id="write-shared" data-page-menu-item role="menuitem">Write shared</button>
                 </div>
             </div>
         </div>
@@ -113,7 +98,7 @@
     <script src="/static/ui/me.js"></script>
     <script src="/static/ui/lights.js"></script>
     <script src="/static/ui/markdown.js"></script>
-    <script src="/static/ui/menu.js"></script>
+    <script src="/static/ui/menu.js?v=house3"></script>
     <script src="/static/ui/admin.js"></script>
     <script>
         const SIDEBAR_KEY = 'light_house_notes_sidebar';
@@ -902,9 +887,7 @@
             loadList();
         }
 
-        LightHouse.theme.setupThemeToggle('#theme-toggle');
-        LightHouse.menu.setupMenuDropdown();
-        LightHouse.admin.bindRestartButton('#restart-server');
+        LightHouse.menu.setupHouseMenu();
 
         init();
     </script>

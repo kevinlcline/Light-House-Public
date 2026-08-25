@@ -152,12 +152,22 @@
     text-decoration: none;
 }
 
-/* Beat `.menu-panel a { display: block }` so sibling dad-only items actually hide. */
+/* Beat `.menu-panel a { display: block }` so role-gated items actually hide. */
 .menu-panel a[hidden],
 .menu-panel button.menu-item[hidden],
 .menu-panel .logout-form[hidden],
-.menu-panel .dad-only-hidden {
+.menu-panel .menu-sep[hidden],
+.menu-panel .dad-only-hidden,
+.menu-panel .sibling-only-hidden {
     display: none !important;
+}
+
+.menu-panel .menu-sep {
+    height: 1px;
+    margin: 6px 10px;
+    background: var(--border-subtle);
+    border: none;
+    padding: 0;
 }
 
 .menu-panel a:hover,

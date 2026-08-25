@@ -2,6 +2,7 @@
     'use strict';
 
     const LH = (global.LightHouse = global.LightHouse || {});
+    const STAGE_KEY = 'light_house_face_stage';
 
     const PALETTES = {
         lumen: { head: '#c4a574', eye: '#2a2218', mouth: '#5c4030' },
@@ -174,6 +175,13 @@
     let stageEl = null;
     let presentIds = new Set();
     let speakingId = '';
+    /** User preference: show the face stage when faces are present. Default on. */
+    let stageVisible = true;
+    try {
+        stageVisible = localStorage.getItem(STAGE_KEY) !== '0';
+    } catch {
+        stageVisible = true;
+    }
     /** @type {Record<string, string>} */
     const voiceIds = Object.assign({}, DEFAULT_VOICES);
     /** @type {Record<string, string>} */
@@ -351,7 +359,7 @@
         name.textContent = id.charAt(0).toUpperCase() + id.slice(1);
         wrap.appendChild(name);
         stageEl.appendChild(wrap);
-        stageEl.hidden = false;
+        applyStageVisibility();
         armIdle(wrap, id);
         return wrap;
     }
@@ -410,7 +418,58 @@
         Object.keys(overlays).forEach((id) => {
             if (!keep.has(id)) forgetAgent(id);
         });
-        if (!keep.size && stageEl) stageEl.hidden = true;
+        if (!keep.size && stageEl) applyStageVisibility();
+    }
+
+    function applyStageVisibility() {
+        if (!stageEl) return;
+        const wraps = stageEl.querySelectorAll('.light-face-wrap');
+        const hasFaces = wraps.length > 0;
+        stageEl.hidden = !stageVisible || !hasFaces;
+        syncStageToggleLabels();
+    }
+
+    function isStageVisible() {
+        return stageVisible;
+    }
+
+    function setStageVisible(on) {
+        stageVisible = Boolean(on);
+        try {
+            localStorage.setItem(STAGE_KEY, stageVisible ? '1' : '0');
+        } catch {
+            /* ignore quota / private mode */
+        }
+        applyStageVisibility();
+    }
+
+    function syncStageToggleLabels() {
+        document.querySelectorAll('[data-stage-toggle]').forEach((el) => {
+            const compact = el.hasAttribute('data-compact');
+            if (compact) {
+                el.textContent = 'Stage';
+            } else {
+                el.textContent = stageVisible ? 'Stage off' : 'Stage on';
+            }
+            el.setAttribute('aria-pressed', stageVisible ? 'true' : 'false');
+            el.classList.toggle('is-on', stageVisible);
+            el.hidden = false;
+            el.disabled = false;
+            el.removeAttribute('hidden');
+        });
+    }
+
+    function setupStageToggle(buttonOrSelector) {
+        const toggle =
+            typeof buttonOrSelector === 'string'
+                ? document.querySelector(buttonOrSelector)
+                : buttonOrSelector;
+        if (!toggle) return;
+        toggle.setAttribute('data-stage-toggle', '');
+        syncStageToggleLabels();
+        toggle.addEventListener('click', () => {
+            setStageVisible(!stageVisible);
+        });
     }
 
     function paint() {
@@ -445,7 +504,7 @@
                 wrap.classList.remove('is-idle-bob', 'is-idle-tilt');
             }
         });
-        stageEl.hidden = wraps.length === 0;
+        applyStageVisibility();
     }
 
     function mount(selectorOrEl) {
@@ -708,5 +767,8 @@
         emotionTimeline,
         classifyCue,
         genderFromVoice,
+        isStageVisible,
+        setStageVisible,
+        setupStageToggle,
     };
 })(typeof window !== 'undefined' ? window : globalThis);

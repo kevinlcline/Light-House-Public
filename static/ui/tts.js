@@ -54,9 +54,17 @@
     }
 
     function syncToggleLabels() {
-        const label = isVoiceOn() ? 'Voice off' : 'Voice on';
         document.querySelectorAll('[data-voice-toggle]').forEach((el) => {
-            el.textContent = label;
+            const on = isVoiceOn();
+            if (el.hasAttribute('data-compact')) {
+                el.textContent = 'Voice';
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+                el.classList.toggle('is-on', on);
+            } else {
+                el.textContent = on ? 'Voice off' : 'Voice on';
+                el.removeAttribute('aria-pressed');
+                el.classList.remove('is-on');
+            }
             el.hidden = false;
             el.disabled = false;
             el.removeAttribute('hidden');

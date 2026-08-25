@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Light-House — Manage lights</title>
+    <script src="/static/ui/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -34,19 +37,17 @@
             gap: 8px;
             flex-wrap: wrap;
         }
-        .top-bar a, .top-bar button {
+        .top-bar-actions > button:not(.menu-trigger) {
             font-size: 14px;
             color: #e0e0e0;
             background: #333;
             border: 1px solid #444;
             cursor: pointer;
-            text-decoration: none;
             padding: 8px 12px;
             border-radius: 8px;
         }
-        .top-bar a.link { color: #90caf9; background: none; border: none; }
-        .top-bar button.primary { background: #1565c0; border-color: #1976d2; color: #fff; }
-        .top-bar button.danger { background: #8b1a1a; border-color: #b71c1c; color: #fff; }
+        .top-bar-actions > button.primary { background: #1565c0; border-color: #1976d2; color: #fff; }
+        .top-bar-actions > button.danger { background: #8b1a1a; border-color: #b71c1c; color: #fff; }
         .status {
             padding: 8px 16px;
             font-size: 13px;
@@ -215,13 +216,22 @@
 </head>
 <body>
     <header class="top-bar">
-        <h1>Manage lights</h1>
+        <div class="top-bar-left">
+            <h1>Manage lights</h1>
+        </div>
         <div class="top-bar-actions">
             <button type="button" class="primary" id="reload">Reload</button>
             <button type="button" class="danger" id="restart">Restart server</button>
-            <a href="/user-setup.html" class="link">Siblings</a>
-            <a href="/env-editor.html" class="link">Environment</a>
-            <a href="/" class="link">Back to chat</a>
+            <div class="menu-dropdown">
+                <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <line x1="4" y1="7" x2="20" y2="7"/>
+                        <line x1="4" y1="12" x2="20" y2="12"/>
+                        <line x1="4" y1="17" x2="20" y2="17"/>
+                    </svg>
+                </button>
+                <div class="menu-panel" id="menu-panel" role="menu" hidden></div>
+            </div>
         </div>
     </header>
     <div class="status" id="status">Loading…</div>
@@ -350,6 +360,10 @@
         </div>
     </div>
 
+    <script src="/static/ui/theme.js"></script>
+    <script src="/static/ui/me.js"></script>
+    <script src="/static/ui/menu.js?v=house3"></script>
+    <script src="/static/ui/admin.js"></script>
     <script src="/static/ui/voices.js"></script>
     <script>
         const statusEl = document.getElementById('status');
@@ -784,6 +798,11 @@
                 e.returnValue = '';
             }
         });
+
+        (async function bootMenu() {
+            await LightHouse.me.fetchMe();
+            LightHouse.menu.setupHouseMenu();
+        })();
 
         ensureVoiceCatalog()
             .then(() => loadManifest())

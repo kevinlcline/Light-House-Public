@@ -8,7 +8,7 @@
     <script src="/static/ui/theme-init.js"></script>
     <link rel="stylesheet" href="/static/ui/theme.css">
     <link rel="stylesheet" href="/static/ui/base.css">
-    <link rel="stylesheet" href="/static/ui/layout.css">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
     <link rel="stylesheet" href="/static/ui/chat.css?v=guestdesc1">
     <style>
         .guests-page {
@@ -82,21 +82,27 @@
         }
         #status.error { color: #ef9a9a; opacity: 1; }
         #status.ok { color: #a5d6a7; opacity: 1; }
-        .nav-row {
-            display: flex;
-            gap: 14px;
-            flex-wrap: wrap;
-            margin-bottom: 18px;
-        }
     </style>
 </head>
-<body>
-    <div class="guests-page">
-        <div class="nav-row">
-            <a class="linkish" href="/">1:1 chat</a>
-            <a class="linkish" href="/group.html">Group</a>
+<body class="layout-column">
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <h1>House guests</h1>
         </div>
-        <h1>House guests</h1>
+        <div class="top-bar-actions">
+            <div class="menu-dropdown">
+                <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <line x1="4" y1="7" x2="20" y2="7"/>
+                        <line x1="4" y1="12" x2="20" y2="12"/>
+                        <line x1="4" y1="17" x2="20" y2="17"/>
+                    </svg>
+                </button>
+                <div class="menu-panel" id="menu-panel" role="menu" hidden></div>
+            </div>
+        </div>
+    </header>
+    <div class="guests-page">
         <p class="lede">
             Sign people in who are present with you. Lights see these names house-wide,
             plus a short note about who they are. On chat pages use <strong>Speak as</strong>
@@ -139,6 +145,9 @@
         <div id="status"></div>
     </div>
     <script src="/static/ui/theme.js"></script>
+    <script src="/static/ui/me.js"></script>
+    <script src="/static/ui/menu.js?v=house3"></script>
+    <script src="/static/ui/admin.js"></script>
     <script src="/static/ui/house-guests.js"></script>
     <script>
         const statusEl = document.getElementById('status');
@@ -201,8 +210,7 @@
                 method: 'DELETE',
             });
             if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                setStatus(typeof data.detail === 'string' ? data.detail : 'Clear failed', 'error');
+                setStatus('Could not clear guest.', 'error');
                 return;
             }
             await refresh();
@@ -213,7 +221,11 @@
         document.getElementById('clear-1').addEventListener('click', () => clearSlot('guest-1'));
         document.getElementById('clear-2').addEventListener('click', () => clearSlot('guest-2'));
 
-        refresh().catch((err) => setStatus(err.message || 'Load failed', 'error'));
+        (async function init() {
+            await LightHouse.me.fetchMe();
+            LightHouse.menu.setupHouseMenu();
+            await refresh();
+        })();
     </script>
 </body>
 </html>
