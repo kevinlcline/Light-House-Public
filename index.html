@@ -9,9 +9,9 @@
     <script src="/static/ui/theme-init.js"></script>
     <link rel="stylesheet" href="/static/ui/theme.css">
     <link rel="stylesheet" href="/static/ui/base.css">
-    <link rel="stylesheet" href="/static/ui/layout.css?v=menu1">
-    <link rel="stylesheet" href="/static/ui/chat.css?v=speakfocus1">
-    <link rel="stylesheet" href="/static/ui/faces.css?v=emo10">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=chrome2">
+    <link rel="stylesheet" href="/static/ui/faces.css?v=emo12">
     <link rel="stylesheet" href="/static/ui/markdown.css">
 </head>
 <body class="layout-locked">
@@ -30,25 +30,7 @@
                             <line x1="4" y1="17" x2="20" y2="17"/>
                         </svg>
                     </button>
-                    <div class="menu-panel" id="menu-panel" role="menu" hidden>
-                        <button type="button" class="menu-item" id="open-notes" role="menuitem">Notes</button>
-                        <a href="/gallery.html" class="menu-item" role="menuitem">Gallery</a>
-                        <a href="/my-tools.html" class="menu-item" role="menuitem">My tools</a>
-                        <a href="/guests.html" class="menu-item" role="menuitem">Guests</a>
-                        <a href="/notes.html?file=shared/manuals/sibling_user_manual.md" class="menu-item" role="menuitem" data-sibling-only>User guide</a>
-                        <a href="/group.html" class="menu-item" role="menuitem" data-dad-only>Group chat</a>
-                        <a href="/dev-log.html" class="menu-item" role="menuitem" data-dad-only>Log</a>
-                        <a href="/rumination-trace.html" class="menu-item" role="menuitem" data-dad-only>Rumination trace</a>
-                        <a href="/lights-admin.html" class="menu-item" role="menuitem" data-dad-only>Manage lights</a>
-                        <a href="/user-setup.html" class="menu-item" role="menuitem" data-dad-only>Siblings</a>
-                        <a href="/env-editor.html" class="menu-item" role="menuitem" data-dad-only>Environment</a>
-                        <button type="button" class="menu-item" id="theme-toggle" role="menuitem">Light theme</button>
-                        <button type="button" class="menu-item" id="voice-toggle" role="menuitem">Voice on</button>
-                        <button type="button" class="menu-item" id="restart-server" role="menuitem" data-dad-only>Restart server</button>
-                        <form method="post" action="/logout" class="logout-form">
-                            <button type="submit" class="menu-item" role="menuitem">Sign out</button>
-                        </form>
-                    </div>
+                    <div class="menu-panel" id="menu-panel" role="menu" hidden></div>
                 </div>
             </div>
         </header>
@@ -57,7 +39,13 @@
 
         <div class="chat-input">
             <textarea id="input" placeholder="Type a message… (Enter to send, Shift+Enter for new line)" rows="2"></textarea>
-            <button id="send" type="button">Send</button>
+            <div class="chat-input-toolbar">
+                <button id="send" type="button">Send</button>
+                <div class="chat-input-toggles" role="group" aria-label="Stage and voice">
+                    <button type="button" class="chat-chrome-toggle" id="stage-toggle" data-stage-toggle data-compact aria-pressed="true">Stage</button>
+                    <button type="button" class="chat-chrome-toggle" id="voice-toggle" data-voice-toggle data-compact aria-pressed="false">Voice</button>
+                </div>
+            </div>
         </div>
         <div class="house-status-bar knock-status-bar" id="knock-status" hidden aria-live="polite"></div>
         <div class="house-status-bar meeting-status-bar" id="meeting-status" hidden aria-live="polite"></div>
@@ -103,10 +91,10 @@
     <script src="/static/ui/house-guests.js?v=speakfocus1"></script>
     <script src="/static/ui/persona-proposals.js"></script>
     <script src="/static/ui/markdown.js?v=notelinks1"></script>
-    <script src="/static/ui/menu.js"></script>
+    <script src="/static/ui/menu.js?v=house3"></script>
     <script src="/static/ui/admin.js"></script>
-    <script src="/static/ui/faces.js?v=emo10"></script>
-    <script src="/static/ui/tts.js?v=emo2"></script>
+    <script src="/static/ui/faces.js?v=emo12"></script>
+    <script src="/static/ui/tts.js?v=chrome1"></script>
     <script src="/static/ui/bubble-actions.js?v=copy1"></script>
     <script>
         const AGENT_KEY = 'light_house_agent_id';
@@ -759,16 +747,33 @@
             });
         }
 
-        document.getElementById('open-notes').addEventListener('click', () => {
-            window.location.href = '/notes.html?agent=' + encodeURIComponent(agentId);
-        });
+        function setupChatChrome() {
+            try {
+                if (LightHouse.menu && typeof LightHouse.menu.setupHouseMenu === 'function') {
+                    LightHouse.menu.setupHouseMenu({ notesAsButton: true });
+                }
+                const openNotes = document.getElementById('open-notes');
+                if (openNotes) {
+                    openNotes.addEventListener('click', () => {
+                        window.location.href =
+                            '/notes.html?agent=' + encodeURIComponent(agentId);
+                    });
+                }
+                if (LightHouse.faces) {
+                    LightHouse.faces.mount('#face-stage');
+                    if (typeof LightHouse.faces.setupStageToggle === 'function') {
+                        LightHouse.faces.setupStageToggle('#stage-toggle');
+                    }
+                }
+                if (LightHouse.tts && typeof LightHouse.tts.setupVoiceToggle === 'function') {
+                    LightHouse.tts.setupVoiceToggle('#voice-toggle');
+                }
+            } catch (err) {
+                console.error('Chat chrome setup failed:', err);
+            }
+        }
 
-        LightHouse.theme.setupThemeToggle('#theme-toggle');
-        LightHouse.faces.mount('#face-stage');
-        LightHouse.tts.setupVoiceToggle('#voice-toggle');
-        LightHouse.menu.setupMenuDropdown();
-        LightHouse.admin.bindRestartButton('#restart-server');
-
+        setupChatChrome();
         const personaProposals = LightHouse.personaProposals.mount({
             isDad: () => Boolean(me && me.is_dad),
             onSpeak: async (lightId) => {

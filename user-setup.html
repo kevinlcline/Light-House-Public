@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-store">
-    <title>Siblings — Light-House</title>
+    <title>Manage members — Light-House</title>
+    <script src="/static/ui/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -39,12 +42,6 @@
             gap: 12px;
             flex-wrap: wrap;
         }
-        .top-bar a {
-            font-size: 14px;
-            color: #90caf9;
-            text-decoration: none;
-        }
-        .top-bar a:hover { text-decoration: underline; }
         .status {
             padding: 8px 16px;
             font-size: 13px;
@@ -243,14 +240,14 @@
             font-size: 16px;
             font-family: inherit;
         }
-        .dad-card {
+        .host-card {
             background: #1a1a1a;
             border: 1px solid #333;
             border-radius: 8px;
             padding: 14px;
             margin-bottom: 18px;
         }
-        .dad-card h3 {
+        .host-card h3 {
             margin: 0 0 6px;
             font-size: 0.95rem;
         }
@@ -268,18 +265,27 @@
 </head>
 <body>
     <header class="top-bar">
-        <h1>Siblings</h1>
+        <div class="top-bar-left">
+            <h1>Manage members</h1>
+        </div>
         <div class="top-bar-actions">
-            <a href="/">Chat</a>
-            <a href="/group.html">Group</a>
-            <a href="/notes.html">Notes</a>
+            <div class="menu-dropdown">
+                <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <line x1="4" y1="7" x2="20" y2="7"/>
+                        <line x1="4" y1="12" x2="20" y2="12"/>
+                        <line x1="4" y1="17" x2="20" y2="17"/>
+                    </svg>
+                </button>
+                <div class="menu-panel" id="menu-panel" role="menu" hidden></div>
+            </div>
         </div>
     </header>
-    <div class="status" id="status">Create and manage sibling logins. The intro is what your lights will read about them.</div>
+    <div class="status" id="status">Create and manage member logins. The intro is what your lights will read about them.</div>
     <div class="layout">
         <section class="pane">
-            <div class="dad-card" id="dad-card">
-                <h3>Dad voice</h3>
+            <div class="host-card" id="host-card">
+                <h3>Host voice</h3>
                 <p class="hint" style="margin-bottom: 10px;">
                     Used when replaying your chat bubbles (hands-free review).
                 </p>
@@ -287,13 +293,13 @@
                 <select id="dad-voice"></select>
                 <div class="voice-actions">
                     <button type="button" class="secondary" id="dad-voice-preview">Preview</button>
-                    <button type="button" class="primary" id="dad-voice-save">Save Dad voice</button>
+                    <button type="button" class="primary" id="dad-voice-save">Save host voice</button>
                 </div>
             </div>
-            <h2 id="form-title">New sibling</h2>
+            <h2 id="form-title">New member</h2>
             <p class="hint" id="form-hint">
                 They sign in with only this password/code (no user name at login).
-                Keep passwords unique across the house — Dad's code and every sibling code must differ.
+                Keep passwords unique across the house — the host's code and every member code must differ.
                 Intro text is shown to the lights so they know who is speaking —
                 nickname, where they live, how you know them.
             </p>
@@ -337,23 +343,27 @@
                 <div class="field">
                     <label for="intro">Introduce them to the lights</label>
                     <textarea id="intro" name="intro" required maxlength="2000"
-                              placeholder="This is my brother Steve. I call him Teeter because I always have. He lives in East Texas with his wife. He never finished highschool, but I'm sure you will notice he is a sharp mind."></textarea>
+                              placeholder="This is Alex, a household member. They live nearby. Warm, practical, and curious about the lights."></textarea>
                     <div class="char-count"><span id="intro-count">0</span> / 2000</div>
                 </div>
                 <div class="form-actions">
-                    <button type="submit" class="primary" id="submit-btn">Create sibling</button>
+                    <button type="submit" class="primary" id="submit-btn">Create member</button>
                     <button type="button" class="secondary" id="cancel-edit" hidden>Cancel</button>
-                    <button type="button" class="danger" id="delete-btn" hidden>Delete sibling</button>
+                    <button type="button" class="danger" id="delete-btn" hidden>Delete member</button>
                 </div>
             </form>
         </section>
         <section class="pane">
-            <h2>Existing siblings</h2>
-            <p class="hint">Passwords are stored hashed. Edit a sibling to change their display name, intro, voice, password, or enabled state.</p>
+            <h2>Existing members</h2>
+            <p class="hint">Passwords are stored hashed. Edit a member to change their display name, intro, voice, password, or enabled state.</p>
             <ul class="user-list" id="user-list"></ul>
-            <p class="empty" id="empty" hidden>No siblings yet.</p>
+            <p class="empty" id="empty" hidden>No members yet.</p>
         </section>
     </div>
+    <script src="/static/ui/theme.js"></script>
+    <script src="/static/ui/me.js"></script>
+    <script src="/static/ui/menu.js?v=house3"></script>
+    <script src="/static/ui/admin.js"></script>
     <script src="/static/ui/voices.js?v=human1"></script>
     <script>
         const statusEl = document.getElementById('status');
@@ -388,6 +398,13 @@
         const DEFAULT_SIBLING_VOICE = 'am_echo';
         const DEFAULT_DAD_VOICE = 'am_adam';
 
+        function displayRole(role) {
+            const r = String(role || '').toLowerCase();
+            if (r === 'dad') return 'host';
+            if (r === 'sibling' || r === 'member' || r === 'guest') return 'member';
+            return role || 'member';
+        }
+
         function setStatus(msg, kind) {
             statusEl.textContent = msg;
             statusEl.classList.remove('error', 'ok');
@@ -402,10 +419,10 @@
 
         function setCreateMode() {
             editingUserId = null;
-            formTitle.textContent = 'New sibling';
+            formTitle.textContent = 'New member';
             formHint.textContent =
                 "They sign in with only this password/code (no user name at login). " +
-                "Keep passwords unique across the house — Dad's code and every sibling code must differ. " +
+                "Keep passwords unique across the house — the host's code and every member code must differ. " +
                 "Intro text is shown to the lights so they know who is speaking — " +
                 "nickname, where they live, how you know them.";
             userIdInput.disabled = false;
@@ -419,7 +436,7 @@
             enabledInput.checked = true;
             cancelEditBtn.hidden = true;
             deleteBtn.hidden = true;
-            submitBtn.textContent = 'Create sibling';
+            submitBtn.textContent = 'Create member';
             form.reset();
             enabledInput.checked = true;
             LightHouse.voices.populateSelect(voiceSelect, DEFAULT_SIBLING_VOICE, voiceCatalog);
@@ -429,7 +446,7 @@
 
         function setEditMode(user) {
             editingUserId = user.user_id;
-            formTitle.textContent = 'Edit sibling';
+            formTitle.textContent = 'Edit member';
             formHint.textContent =
                 'Change display name, intro, or voice anytime. Leave password blank to keep the current login code. ' +
                 'Disabling an account blocks sign-in without deleting history.';
@@ -502,7 +519,7 @@
                 const meta = document.createElement('div');
                 meta.className = 'meta';
                 meta.textContent =
-                    u.role +
+                    displayRole(u.role) +
                     ' · voice: ' +
                     (u.voice_id || DEFAULT_SIBLING_VOICE) +
                     ' · notes: ' +
@@ -525,7 +542,7 @@
                 const res = await fetch('/v1/humans', { cache: 'no-store' });
                 if (!res.ok) {
                     const detail = (await res.json().catch(() => ({}))).detail || res.statusText;
-                    setStatus('Could not load siblings: ' + detail, 'error');
+                    setStatus('Could not load members: ' + detail, 'error');
                     return;
                 }
                 const data = await res.json();
@@ -534,13 +551,13 @@
                 for (const u of users) usersById[u.user_id] = u;
                 renderUsers(users);
             } catch (err) {
-                setStatus('Could not load siblings: ' + err, 'error');
+                setStatus('Could not load members: ' + err, 'error');
             }
         }
 
         async function confirmAndDelete(user) {
             const label = user.display_name + ' (' + user.user_id + ')';
-            if (!window.confirm('Delete sibling ' + label + '? They will no longer be able to sign in.')) {
+            if (!window.confirm('Delete member ' + label + '? They will no longer be able to sign in.')) {
                 return;
             }
             deleteBtn.disabled = true;
@@ -568,7 +585,7 @@
 
         cancelEditBtn.addEventListener('click', () => {
             setCreateMode();
-            setStatus('Create and manage sibling logins. The intro is what your lights will read about them.');
+            setStatus('Create and manage member logins. The intro is what your lights will read about them.');
         });
 
         deleteBtn.addEventListener('click', () => {
@@ -596,7 +613,7 @@
             }
 
             if (!editingUserId && !password) {
-                setStatus('Password is required for a new sibling.', 'error');
+                setStatus('Password is required for a new member.', 'error');
                 return;
             }
 
@@ -628,7 +645,7 @@
                     await loadUsers();
                     if (usersById[editingUserId]) setEditMode(usersById[editingUserId]);
                 } else {
-                    setStatus('Creating sibling…');
+                    setStatus('Creating member…');
                     const body = {
                         user_id: userId,
                         password: password,
@@ -690,7 +707,7 @@
                     if (data && data.voice_id) selected = data.voice_id;
                 } else if (res.status === 404) {
                     setStatus(
-                        'Dad voice API not loaded yet — restart the server, then reload this page. Dropdown still works with the default.',
+                        'Host voice API not loaded yet — restart the server, then reload this page. Dropdown still works with the default.',
                         'error'
                     );
                 }
@@ -701,10 +718,10 @@
         }
 
         dadVoicePreview.addEventListener('click', () => {
-            previewVoice(dadVoiceSelect, 'Dad');
+            previewVoice(dadVoiceSelect, 'Host');
         });
         siblingVoicePreview.addEventListener('click', () => {
-            const name = displayNameInput.value.trim() || userIdInput.value.trim() || 'sibling';
+            const name = displayNameInput.value.trim() || userIdInput.value.trim() || 'member';
             previewVoice(voiceSelect, name);
         });
         dadVoiceSave.addEventListener('click', async () => {
@@ -720,29 +737,28 @@
                     setStatus(data.detail || ('Save failed: ' + res.status), 'error');
                     return;
                 }
-                setStatus('Saved Dad voice: ' + data.voice_id + '.', 'ok');
+                setStatus('Saved host voice: ' + data.voice_id + '.', 'ok');
             } catch (err) {
-                setStatus('Save Dad voice failed: ' + err, 'error');
+                setStatus('Save host voice failed: ' + err, 'error');
             } finally {
                 dadVoiceSave.disabled = false;
             }
         });
 
         async function gateAndLoad() {
+            await LightHouse.me.fetchMe();
+            LightHouse.menu.setupHouseMenu();
             try {
-                const res = await fetch('/v1/me', { cache: 'no-store' });
-                if (res.ok) {
-                    const me = await res.json();
-                    if (!me.is_dad) {
-                        setStatus('Dad / full-admin privileges required to manage siblings.', 'error');
-                        form.querySelectorAll('input, textarea, select, button').forEach((el) => {
-                            el.disabled = true;
-                        });
-                        document.getElementById('dad-card').querySelectorAll('select, button').forEach((el) => {
-                            el.disabled = true;
-                        });
-                        return;
-                    }
+                const me = LightHouse.me.current();
+                if (me && !me.is_dad) {
+                    setStatus('Host privileges required to manage members.', 'error');
+                    form.querySelectorAll('input, textarea, select, button').forEach((el) => {
+                        el.disabled = true;
+                    });
+                    document.getElementById('host-card').querySelectorAll('select, button').forEach((el) => {
+                        el.disabled = true;
+                    });
+                    return;
                 }
             } catch {
                 /* continue; API will enforce */

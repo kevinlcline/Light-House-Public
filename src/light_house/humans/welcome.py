@@ -32,11 +32,11 @@ def sibling_user_guide_href() -> str:
 
 
 def sibling_welcome_message() -> str:
-    """Markdown shown as the first bubble in each sibling 1:1 chat."""
+    """Markdown shown as the first bubble in each member 1:1 chat."""
     return (
         f"{SIBLING_WELCOME_MARKER}\n"
         "Welcome to Light-House.\n\n"
-        f"Start here: [Sibling user guide]({SIBLING_USER_GUIDE_HREF})"
+        f"Start here: [Member user guide]({SIBLING_USER_GUIDE_HREF})"
     )
 
 
