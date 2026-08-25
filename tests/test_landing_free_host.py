@@ -17,6 +17,14 @@ def test_landing_advertises_free_and_host_paths() -> None:
     assert "openrouter" in html.lower() or "OpenRouter" in html
 
 
+def test_landing_beacon_has_mingling_residents() -> None:
+    html = (REPO_ROOT / "landing.html").read_text(encoding="utf-8")
+    assert 'class="resident resident-a"' in html
+    assert "mingle-a" in html
+    assert "chamber-glow" in html
+    assert "lamp-pulse" not in html
+
+
 def test_deploy_docs_exist() -> None:
     assert (REPO_ROOT / "DEPLOY.md").is_file()
     assert (REPO_ROOT / "AGENTS.md").is_file()
