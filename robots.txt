@@ -1,49 +1,24 @@
-# Light-House — public homepage is open to readers and AI assistants.
-# The house interior (chat, notes, APIs) stays behind the password gate.
+# robots.txt — a polite note for search engines and AI fetchers.
+# It does NOT lock the site. It only says what we prefer they look at.
+#
+# Plain meaning for Light-House:
+#   • The public homepage (/) is fine to read and summarize.
+#   • Chat, notes, and APIs are behind a password anyway.
 
+# "*" means: every bot that doesn't have its own section below
 User-agent: *
 Allow: /
-Allow: /robots.txt
-Allow: /llms.txt
-Allow: /login
-Disallow: /v1/
-Disallow: /index.html
-Disallow: /group.html
-Disallow: /notes.html
-Disallow: /gallery.html
-Disallow: /guests.html
-Disallow: /my-tools.html
-Disallow: /lights-admin.html
-Disallow: /user-setup.html
-Disallow: /env-editor.html
-Disallow: /dev-log.html
-Disallow: /rumination-trace.html
-Disallow: /static/
 
-# Explicitly allow Google’s Gemini / grounding fetch control (not a search ranking signal).
+# Google / Gemini (this is the line Gemini cares about)
 User-agent: Google-Extended
 Allow: /
-Allow: /robots.txt
-Allow: /llms.txt
 
+# Other common AI fetchers
 User-agent: GPTBot
 Allow: /
-Allow: /robots.txt
-Allow: /llms.txt
 
 User-agent: ChatGPT-User
 Allow: /
-Allow: /robots.txt
-Allow: /llms.txt
 
 User-agent: ClaudeBot
 Allow: /
-Allow: /robots.txt
-Allow: /llms.txt
-
-User-agent: anthropic-ai
-Allow: /
-Allow: /robots.txt
-Allow: /llms.txt
-
-Sitemap: https://light-house.cc/
