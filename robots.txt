@@ -1,0 +1,49 @@
+# Light-House — public homepage is open to readers and AI assistants.
+# The house interior (chat, notes, APIs) stays behind the password gate.
+
+User-agent: *
+Allow: /
+Allow: /robots.txt
+Allow: /llms.txt
+Allow: /login
+Disallow: /v1/
+Disallow: /index.html
+Disallow: /group.html
+Disallow: /notes.html
+Disallow: /gallery.html
+Disallow: /guests.html
+Disallow: /my-tools.html
+Disallow: /lights-admin.html
+Disallow: /user-setup.html
+Disallow: /env-editor.html
+Disallow: /dev-log.html
+Disallow: /rumination-trace.html
+Disallow: /static/
+
+# Explicitly allow Google’s Gemini / grounding fetch control (not a search ranking signal).
+User-agent: Google-Extended
+Allow: /
+Allow: /robots.txt
+Allow: /llms.txt
+
+User-agent: GPTBot
+Allow: /
+Allow: /robots.txt
+Allow: /llms.txt
+
+User-agent: ChatGPT-User
+Allow: /
+Allow: /robots.txt
+Allow: /llms.txt
+
+User-agent: ClaudeBot
+Allow: /
+Allow: /robots.txt
+Allow: /llms.txt
+
+User-agent: anthropic-ai
+Allow: /
+Allow: /robots.txt
+Allow: /llms.txt
+
+Sitemap: https://light-house.cc/
