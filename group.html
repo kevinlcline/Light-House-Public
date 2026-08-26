@@ -9,8 +9,8 @@
     <link rel="stylesheet" href="/static/ui/theme.css">
     <link rel="stylesheet" href="/static/ui/base.css">
     <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
-    <link rel="stylesheet" href="/static/ui/chat.css?v=chrome2">
-    <link rel="stylesheet" href="/static/ui/faces.css?v=emo12">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=color1">
+    <link rel="stylesheet" href="/static/ui/faces.css?v=glow2">
     <link rel="stylesheet" href="/static/ui/markdown.css">
 </head>
 <body class="layout-locked">
@@ -55,10 +55,10 @@
     <script src="/static/ui/me.js"></script>
     <script src="/static/ui/menu.js?v=house3"></script>
     <script src="/static/ui/admin.js"></script>
-    <script src="/static/ui/lights.js"></script>
+    <script src="/static/ui/lights.js?v=color1"></script>
     <script src="/static/ui/house-guests.js?v=speakfocus1"></script>
     <script src="/static/ui/markdown.js?v=notelinks1"></script>
-    <script src="/static/ui/faces.js?v=emo12"></script>
+    <script src="/static/ui/faces.js?v=color1"></script>
     <script src="/static/ui/tts.js?v=queue1"></script>
     <script src="/static/ui/bubble-actions.js?v=copy1"></script>
     <script>
@@ -78,6 +78,8 @@
         /** @type {Record<string, string>} */
         let humanVoices = {};
         const LIGHT_BUBBLE_CLASSES = new Set(['lumen', 'ara', 'elias', 'echo']);
+        /** @type {Record<string, string>} */
+        let lightColors = {};
         const seenKeys = new Set();
 
         function selectedSpeaker() {
@@ -207,6 +209,13 @@
             } else {
                 const id = msg.agent_id || msg.speaker_id || '';
                 bubble.className = 'message ' + agentClass(id);
+                if (
+                    lightColors[id] &&
+                    LightHouse.lights &&
+                    typeof LightHouse.lights.applyBubbleColor === 'function'
+                ) {
+                    LightHouse.lights.applyBubbleColor(bubble, lightColors[id]);
+                }
                 const label = document.createElement('div');
                 label.className = 'speaker-label';
                 label.textContent = msg.display_name || id;
@@ -600,10 +609,15 @@
                 const data = await LightHouse.lights.fetchEnabled();
                 const list = data.list || [];
                 lightIds = list.map((l) => l.id).filter(Boolean);
+                lightColors = data.colors || LightHouse.lights.colorsMapFromList(list);
                 populateModeSelect(list);
+                if (typeof LightHouse.faces.setColors === 'function') {
+                    LightHouse.faces.setColors(lightColors);
+                }
                 LightHouse.faces.setPresentMany(lightIds);
             } catch {
                 lightIds = ['lumen', 'ara', 'elias'];
+                lightColors = {};
                 populateModeSelect([
                     { id: 'lumen', display_name: 'Lumen' },
                     { id: 'ara', display_name: 'Ara' },

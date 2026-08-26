@@ -129,6 +129,10 @@
     align-self: flex-start;
 }
 
+.message.has-light-color {
+    align-self: flex-start;
+}
+
 .peer {
     background: var(--bubble-peer);
     color: var(--bubble-peer-text);

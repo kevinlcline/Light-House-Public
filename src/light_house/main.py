@@ -647,6 +647,7 @@ class LightInfo(BaseModel):
     wants_kevin: bool = False  # soft knock for Dad (status bar)
     wants_family_meeting: bool = False  # light asked Dad to open Group
     family_meeting_topic: str = ""
+    color: str | None = None
 
 
 class LightsListResponse(BaseModel):
@@ -917,6 +918,7 @@ class AdminLightDetail(BaseModel):
     dreams: bool
     report_back: bool
     voice_id: str | None = None
+    color: str | None = None
 
 
 class AdminLightsManifestResponse(BaseModel):
@@ -936,6 +938,12 @@ class AdminCreateLightRequest(BaseModel):
     dreams: bool = True
     report_back: bool = False
     voice_id: str | None = Field(default=None, max_length=64)
+    color: str | None = Field(
+        default=None,
+        min_length=7,
+        max_length=7,
+        pattern=r"^#[0-9a-fA-F]{6}$",
+    )
     persona_content: str | None = Field(default=None, max_length=262_144)
     set_primary: bool = False
     llm_provider: str | None = None
@@ -952,6 +960,7 @@ class AdminUpdateLightRequest(BaseModel):
     dreams: bool | None = None
     report_back: bool | None = None
     voice_id: str | None = Field(default=None, max_length=64)
+    color: str | None = Field(default=None, min_length=7, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$")
     set_primary: bool | None = None
 
 
@@ -1177,6 +1186,7 @@ def _lights_list_response(
                 family_meeting_topic=(
                     meeting_topic(settings, light.id) if show_knocks else ""
                 ),
+                color=light.color,
             )
             for light in list_lights(settings)
         ],
@@ -3130,6 +3140,7 @@ def post_admin_light(
             dreams=body.dreams,
             report_back=body.report_back,
             voice_id=body.voice_id,
+            color=body.color,
             persona_content=body.persona_content,
             set_primary=body.set_primary,
             llm_provider=body.llm_provider,
@@ -3187,6 +3198,7 @@ def patch_admin_light(
             dreams=body.dreams,
             report_back=body.report_back,
             voice_id=body.voice_id,
+            color=body.color,
             set_primary=body.set_primary,
         )
     except LightsAdminError as exc:

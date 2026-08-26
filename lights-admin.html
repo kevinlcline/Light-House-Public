@@ -160,14 +160,75 @@
             font-size: 13px;
             color: #bbb;
         }
-        input[type="text"], select, textarea {
+        input[type="text"], input[type="color"], select, textarea {
             background: #0a0a0a;
             color: #e0e0e0;
             border: 1px solid #444;
             border-radius: 8px;
             padding: 10px 12px;
             font-size: 14px;
-            font-family: inherit;
+        }
+        input[type="color"] {
+            padding: 4px;
+            height: 42px;
+            cursor: pointer;
+        }
+        .color-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        .color-row input[type="color"] {
+            width: 52px;
+            flex: 0 0 auto;
+        }
+        .color-row input[type="text"] {
+            width: 7.5rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            text-transform: lowercase;
+        }
+        .color-swatches {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .color-swatch {
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            border: 2px solid #444;
+            padding: 0;
+            cursor: pointer;
+            background: var(--swatch);
+        }
+        .color-swatch[aria-pressed="true"] {
+            border-color: #e0e0e0;
+            box-shadow: 0 0 0 2px #1976d2;
+        }
+        .color-preview {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #aaa;
+        }
+        .color-preview-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            background: var(--preview, #888);
+            box-shadow: 0 0 10px color-mix(in srgb, var(--preview, #888) 70%, transparent);
+        }
+        .light-item .swatch {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            margin-right: 8px;
+            vertical-align: middle;
+            background: var(--light-color, #888);
+            box-shadow: 0 0 8px color-mix(in srgb, var(--light-color, #888) 65%, transparent);
         }
         input:disabled { opacity: 0.6; }
         textarea {
@@ -262,6 +323,15 @@
                     <div class="actions" style="margin-top: -8px;">
                         <button type="button" id="create-voice-preview">Preview voice</button>
                     </div>
+                    <label>Color
+                        <span class="hint">Face glow and chat bubble tint for this light.</span>
+                        <div class="color-row" data-color-picker="create">
+                            <input type="color" id="create-color" value="#7a9ec2" aria-label="Pick color">
+                            <input type="text" id="create-color-hex" value="#7a9ec2" maxlength="7" spellcheck="false" aria-label="Color hex">
+                            <span class="color-preview"><span class="color-preview-dot" id="create-color-preview" style="--preview:#7a9ec2"></span> Preview</span>
+                        </div>
+                        <div class="color-swatches" id="create-color-swatches" aria-label="Suggested colors"></div>
+                    </label>
                     <label>LLM provider
                         <select id="create-llm-provider">
                             <option value="ollama">ollama</option>
@@ -309,6 +379,15 @@
                         <div class="actions" style="margin-top: -8px;">
                             <button type="button" id="field-voice-preview">Preview voice</button>
                         </div>
+                        <label>Color
+                            <span class="hint">Face glow and chat bubble tint for this light.</span>
+                            <div class="color-row" data-color-picker="field">
+                                <input type="color" id="field-color" value="#c4a574" aria-label="Pick color">
+                                <input type="text" id="field-color-hex" value="#c4a574" maxlength="7" spellcheck="false" aria-label="Color hex">
+                                <span class="color-preview"><span class="color-preview-dot" id="field-color-preview" style="--preview:#c4a574"></span> Preview</span>
+                            </div>
+                            <div class="color-swatches" id="field-color-swatches" aria-label="Suggested colors"></div>
+                        </label>
                         <label class="checkbox-row"><input type="checkbox" id="field-enabled"> Enabled</label>
                         <label class="checkbox-row"><input type="checkbox" id="field-inner-life"> Inner life (rumination)</label>
                         <label class="checkbox-row"><input type="checkbox" id="field-dreams"> Dreams (Echo)</label>
@@ -381,6 +460,93 @@
         let activeTab = 'settings';
         let voiceCatalog = [];
         let previewAudio = null;
+
+        const COLOR_PRESETS = [
+            '#c4a574',
+            '#c9a3c4',
+            '#88b5a4',
+            '#9b93b8',
+            '#7a9ec2',
+            '#d4a574',
+            '#c47a7a',
+            '#6b9b7a',
+            '#b08968',
+            '#8a7a9a',
+        ];
+
+        function normalizeHex(value) {
+            const raw = String(value || '').trim().toLowerCase();
+            if (/^#[0-9a-f]{6}$/.test(raw)) return raw;
+            if (/^[0-9a-f]{6}$/.test(raw)) return '#' + raw;
+            return null;
+        }
+
+        function setColorInputs(prefix, hex) {
+            const color = normalizeHex(hex) || '#7a9ec2';
+            const picker = document.getElementById(prefix + '-color');
+            const text = document.getElementById(prefix + '-color-hex');
+            const preview = document.getElementById(prefix + '-color-preview');
+            if (picker) picker.value = color;
+            if (text) text.value = color;
+            if (preview) preview.style.setProperty('--preview', color);
+            const swatches = document.getElementById(prefix + '-color-swatches');
+            if (swatches) {
+                swatches.querySelectorAll('.color-swatch').forEach((btn) => {
+                    btn.setAttribute(
+                        'aria-pressed',
+                        btn.dataset.color === color ? 'true' : 'false'
+                    );
+                });
+            }
+            return color;
+        }
+
+        function getColorInput(prefix) {
+            const fromText = normalizeHex(
+                document.getElementById(prefix + '-color-hex').value
+            );
+            if (fromText) return fromText;
+            return normalizeHex(document.getElementById(prefix + '-color').value);
+        }
+
+        function mountSwatches(prefix) {
+            const host = document.getElementById(prefix + '-color-swatches');
+            if (!host || host.dataset.ready === '1') return;
+            host.dataset.ready = '1';
+            for (const hex of COLOR_PRESETS) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'color-swatch';
+                btn.style.setProperty('--swatch', hex);
+                btn.dataset.color = hex;
+                btn.title = hex;
+                btn.setAttribute('aria-label', 'Use color ' + hex);
+                btn.setAttribute('aria-pressed', 'false');
+                btn.addEventListener('click', () => setColorInputs(prefix, hex));
+                host.appendChild(btn);
+            }
+            const picker = document.getElementById(prefix + '-color');
+            const text = document.getElementById(prefix + '-color-hex');
+            picker.addEventListener('input', () => setColorInputs(prefix, picker.value));
+            text.addEventListener('change', () => {
+                const next = normalizeHex(text.value);
+                if (next) setColorInputs(prefix, next);
+                else setColorInputs(prefix, picker.value);
+            });
+            text.addEventListener('input', () => {
+                const next = normalizeHex(text.value);
+                if (next) setColorInputs(prefix, next);
+            });
+        }
+
+        function suggestedCreateColor() {
+            const used = new Set(
+                (manifest && manifest.lights ? manifest.lights : [])
+                    .map((l) => normalizeHex(l.color))
+                    .filter(Boolean)
+            );
+            return COLOR_PRESETS.find((c) => !used.has(c)) || COLOR_PRESETS[0];
+        }
 
         async function ensureVoiceCatalog() {
             if (voiceCatalog.length) return voiceCatalog;
@@ -457,6 +623,7 @@
             if (document.getElementById('field-dreams').checked !== s.dreams) return true;
             if (document.getElementById('field-report-back').checked !== s.report_back) return true;
             if (document.getElementById('field-voice').value !== (s.voice_id || LightHouse.voices.defaultForLight(s.id))) return true;
+            if (getColorInput('field') !== normalizeHex(s.color)) return true;
             const isPrimary = manifest && manifest.primary_light_id === selectedId;
             if (document.getElementById('field-primary').checked !== isPrimary) return true;
             if (document.getElementById('persona-editor').value !== personaLoaded) return true;
@@ -500,7 +667,9 @@
                 if (manifest.primary_light_id === light.id) {
                     badges.push('<span class="badge badge-primary">primary</span>');
                 }
-                btn.innerHTML = `<span class="name">${light.display_name}</span><span class="meta">${light.id} · ${light.thread_id} ${badges.join('')}</span>`;
+                btn.innerHTML =
+                    `<span class="name"><span class="swatch" style="--light-color:${normalizeHex(light.color) || '#888'}"></span>${light.display_name}</span>` +
+                    `<span class="meta">${light.id} · ${light.thread_id} ${badges.join('')}</span>`;
                 btn.addEventListener('click', () => selectLight(light.id));
                 lightListEl.appendChild(btn);
             }
@@ -521,6 +690,7 @@
                 light.voice_id || LightHouse.voices.defaultForLight(light.id),
                 voiceCatalog
             );
+            setColorInputs('field', light.color || '#c4a574');
         }
 
         async function loadPersona(id) {
@@ -589,8 +759,13 @@
                 dreams: document.getElementById('field-dreams').checked,
                 report_back: document.getElementById('field-report-back').checked,
                 voice_id: document.getElementById('field-voice').value,
+                color: getColorInput('field'),
                 set_primary: document.getElementById('field-primary').checked,
             };
+            if (!body.color) {
+                setStatus('Choose a valid color (#rrggbb).', 'error');
+                return;
+            }
             try {
                 await api(`/v1/admin/lights/${encodeURIComponent(selectedId)}`, {
                     method: 'PATCH',
@@ -665,6 +840,7 @@
             document.getElementById('create-llm-model').value = '';
             document.getElementById('create-set-primary').checked = false;
             document.getElementById('create-persona').value = personaStub('New Light');
+            setColorInputs('create', suggestedCreateColor());
             const createVoice = document.getElementById('create-voice');
             createVoice.dataset.userPicked = '';
             ensureVoiceCatalog().then(() => {
@@ -680,21 +856,27 @@
             const id = slugify(document.getElementById('create-id').value);
             const displayName = document.getElementById('create-display-name').value.trim() || id;
             const threadId = document.getElementById('create-thread-id').value.trim() || `${id}-home`;
+            const color = getColorInput('create');
+            if (!id) {
+                setStatus('Light id is required.', 'error');
+                return;
+            }
+            if (!color) {
+                setStatus('Choose a color for this light.', 'error');
+                return;
+            }
             const body = {
                 id,
                 display_name: displayName,
                 thread_id: threadId,
                 voice_id: document.getElementById('create-voice').value
                     || LightHouse.voices.defaultForLight(id),
+                color,
                 persona_content: document.getElementById('create-persona').value,
                 set_primary: document.getElementById('create-set-primary').checked,
                 llm_provider: document.getElementById('create-llm-provider').value,
                 llm_model: document.getElementById('create-llm-model').value.trim(),
             };
-            if (!id) {
-                setStatus('Light id is required (lowercase slug).', 'error');
-                return;
-            }
             if (!body.llm_model) {
                 setStatus('LLM model is required for a new light.', 'error');
                 return;
@@ -804,6 +986,8 @@
             LightHouse.menu.setupHouseMenu();
         })();
 
+        mountSwatches('create');
+        mountSwatches('field');
         ensureVoiceCatalog()
             .then(() => loadManifest())
             .catch((err) => {

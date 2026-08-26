@@ -17,7 +17,64 @@ from light_house.config import Settings
 logger = logging.getLogger(__name__)
 
 _LIGHT_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _MANIFEST_VERSION = 1
+
+# Face/glow defaults for the classic household (matches static/ui/faces.js).
+DEFAULT_LIGHT_COLORS: dict[str, str] = {
+    "lumen": "#c4a574",
+    "ara": "#c9a3c4",
+    "elias": "#88b5a4",
+    "echo": "#9b93b8",
+}
+
+
+def normalize_light_color(raw: str | None, *, required: bool = False) -> str | None:
+    """Return lowercase #rrggbb, or None when empty and not required."""
+    if raw is None:
+        if required:
+            raise ValueError("color is required (#rrggbb)")
+        return None
+    value = str(raw).strip()
+    if not value:
+        if required:
+            raise ValueError("color is required (#rrggbb)")
+        return None
+    if not _COLOR_RE.match(value):
+        raise ValueError(f"Invalid color {value!r} (use #rrggbb)")
+    return value.lower()
+
+
+def default_color_for_light(light_id: str) -> str:
+    """Stable default when a light has no color in the manifest yet."""
+    known = DEFAULT_LIGHT_COLORS.get(str(light_id).strip().lower())
+    if known:
+        return known
+    # Deterministic soft hue from id so new lights aren't all gray before edit.
+    digest = sum(ord(ch) for ch in str(light_id).strip().lower()) or 1
+    hue = digest % 360
+    # Fixed mid saturation/lightness → hex via simple HSL conversion.
+    sat, light = 0.42, 0.62
+    c = (1 - abs(2 * light - 1)) * sat
+    x = c * (1 - abs((hue / 60) % 2 - 1))
+    m = light - c / 2
+    if hue < 60:
+        r, g, b = c, x, 0.0
+    elif hue < 120:
+        r, g, b = x, c, 0.0
+    elif hue < 180:
+        r, g, b = 0.0, c, x
+    elif hue < 240:
+        r, g, b = 0.0, x, c
+    elif hue < 300:
+        r, g, b = x, 0.0, c
+    else:
+        r, g, b = c, 0.0, x
+    return "#{:02x}{:02x}{:02x}".format(
+        int(round((r + m) * 255)),
+        int(round((g + m) * 255)),
+        int(round((b + m) * 255)),
+    )
 
 
 @dataclass(frozen=True)
@@ -32,6 +89,7 @@ class LightEntry:
     dreams: bool
     report_back: bool
     voice_id: str | None = None
+    color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +130,7 @@ def bootstrap_manifest_dict(settings: Settings) -> dict:
                 "dreams": True,
                 "report_back": settings.lumen_report_back_enabled,
                 "voice_id": "af_sarah",
+                "color": DEFAULT_LIGHT_COLORS["lumen"],
             },
             {
                 "id": "ara",
@@ -84,6 +143,7 @@ def bootstrap_manifest_dict(settings: Settings) -> dict:
                 "dreams": True,
                 "report_back": settings.ara_report_back_enabled,
                 "voice_id": "af_bella",
+                "color": DEFAULT_LIGHT_COLORS["ara"],
             },
             {
                 "id": "elias",
@@ -96,6 +156,7 @@ def bootstrap_manifest_dict(settings: Settings) -> dict:
                 "dreams": True,
                 "report_back": False,
                 "voice_id": "am_michael",
+                "color": DEFAULT_LIGHT_COLORS["elias"],
             },
         ],
     }
@@ -131,6 +192,12 @@ def _parse_light(raw: dict, *, settings: Settings) -> LightEntry:
     voice_id = str(voice_raw).strip() if voice_raw is not None else None
     if voice_id == "":
         voice_id = None
+    try:
+        color = normalize_light_color(raw.get("color"))
+    except ValueError as exc:
+        raise ValueError(f"Light {light_id!r}: {exc}") from exc
+    if color is None:
+        color = default_color_for_light(light_id)
     env_report = f"{light_id.upper()}_REPORT_BACK_ENABLED"
     if env_report in os.environ:
         report_back = _env_bool(env_report, report_back)
@@ -147,6 +214,7 @@ def _parse_light(raw: dict, *, settings: Settings) -> LightEntry:
         dreams=dreams,
         report_back=report_back,
         voice_id=voice_id,
+        color=color,
     )
 
 
@@ -180,6 +248,7 @@ def light_entry_to_dict(light: LightEntry) -> dict:
         "dreams": light.dreams,
         "report_back": light.report_back,
         "voice_id": light.voice_id,
+        "color": light.color or default_color_for_light(light.id),
     }
 
 

@@ -11,6 +11,9 @@
         echo: { head: '#9b93b8', eye: '#241e33', mouth: '#4a4260' },
     };
     const FALLBACK = { head: '#9a9a9a', eye: '#222', mouth: '#444' };
+    /** Runtime overrides from /v1/lights `color` (Manage lights picker). */
+    /** @type {Record<string, string>} */
+    const colorOverrides = {};
     /** House defaults until /v1/tts/status voices arrive (match lights.yaml). */
     const DEFAULT_VOICES = {
         lumen: 'af_heart',
@@ -175,6 +178,9 @@
     let stageEl = null;
     let presentIds = new Set();
     let speakingId = '';
+    /** 0..1 speech energy → CSS --mouth-open on the talking wrap. */
+    let mouthOpen = 0;
+    let lipSyncActive = false;
     /** User preference: show the face stage when faces are present. Default on. */
     let stageVisible = true;
     try {
@@ -197,8 +203,46 @@
     /** @type {Record<string, { bob: number, tilt: number }>} */
     const idleTimers = {};
 
+    function normalizeHex(value) {
+        const raw = String(value || '').trim().toLowerCase();
+        if (/^#[0-9a-f]{6}$/.test(raw)) return raw;
+        if (/^[0-9a-f]{6}$/.test(raw)) return '#' + raw;
+        return null;
+    }
+
+    function mixChannel(channel, toward, amount) {
+        return Math.round(channel + (toward - channel) * amount);
+    }
+
+    function shadeHex(hex, amount) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = (n >> 16) & 255;
+        const g = (n >> 8) & 255;
+        const b = n & 255;
+        const toward = amount < 0 ? 0 : 255;
+        const t = Math.abs(amount);
+        return (
+            '#' +
+            [r, g, b]
+                .map((c) =>
+                    mixChannel(c, toward, t).toString(16).padStart(2, '0')
+                )
+                .join('')
+        );
+    }
+
+    function paletteFromHex(hex) {
+        const head = normalizeHex(hex) || FALLBACK.head;
+        return {
+            head,
+            eye: shadeHex(head, -0.62),
+            mouth: shadeHex(head, -0.38),
+        };
+    }
+
     function paletteFor(agentId) {
         const id = String(agentId || '').toLowerCase();
+        if (colorOverrides[id]) return paletteFromHex(colorOverrides[id]);
         return PALETTES[id] || FALLBACK;
     }
 
@@ -227,6 +271,12 @@
         const girlBow = '#f0a0b8';
         const boyBow = '#d32f2f';
         svg.innerHTML =
+            '<circle class="face-halo face-halo-outer" cx="32" cy="32" r="34" fill="' +
+            p.head +
+            '" aria-hidden="true"></circle>' +
+            '<circle class="face-halo" cx="32" cy="32" r="31" fill="' +
+            p.head +
+            '" aria-hidden="true"></circle>' +
             '<circle class="face-head" cx="32" cy="32" r="28" fill="' +
             p.head +
             '"></circle>' +
@@ -353,6 +403,8 @@
         wrap = document.createElement('div');
         wrap.className = 'light-face-wrap';
         wrap.dataset.face = id;
+        const palette = paletteFor(id);
+        wrap.style.setProperty('--face-glow', palette.head);
         wrap.appendChild(svgFace(id));
         const name = document.createElement('div');
         name.className = 'light-face-name';
@@ -485,11 +537,21 @@
             const gesture = onStage ? gestures[id] || '' : '';
             const overlay = onStage ? overlays[id] || '' : '';
             const gender = genderFor(id);
+            const palette = paletteFor(id);
+            wrap.style.setProperty('--face-glow', palette.head);
             wrap.classList.toggle('is-talking', talking);
+            wrap.classList.toggle('is-lip-sync', talking && lipSyncActive);
             wrap.classList.toggle('is-present', presentIds.has(id) && !talking);
             wrap.classList.toggle('has-gesture', Boolean(gesture));
             wrap.classList.toggle('face-gender-girl', gender === 'girl');
             wrap.classList.toggle('face-gender-boy', gender === 'boy');
+            if (talking && lipSyncActive) {
+                const open = 0.18 + mouthOpen * 0.82;
+                wrap.style.setProperty('--mouth-open', String(open));
+            } else {
+                wrap.classList.remove('is-lip-sync');
+                wrap.style.removeProperty('--mouth-open');
+            }
             applyFaceClasses(wrap, pose, gesture, overlay, talking);
             const face = wrap.querySelector('.light-face');
             applyFaceClasses(face, pose, gesture, overlay, talking);
@@ -541,6 +603,34 @@
             const voice = String(map[key] || '').trim();
             if (voice) voiceIds[id] = voice;
         });
+        paint();
+    }
+
+    function remountFaceSvg(wrap, id) {
+        if (!wrap) return;
+        const next = svgFace(id);
+        const prev = wrap.querySelector('.light-face');
+        if (prev) prev.replaceWith(next);
+        else wrap.insertBefore(next, wrap.firstChild);
+        wrap.style.setProperty('--face-glow', paletteFor(id).head);
+    }
+
+    function setColors(map) {
+        Object.keys(colorOverrides).forEach((key) => {
+            delete colorOverrides[key];
+        });
+        if (map && typeof map === 'object') {
+            Object.keys(map).forEach((key) => {
+                const id = String(key || '').toLowerCase();
+                const hex = normalizeHex(map[key]);
+                if (id && hex) colorOverrides[id] = hex;
+            });
+        }
+        if (stageEl) {
+            stageEl.querySelectorAll('.light-face-wrap').forEach((wrap) => {
+                remountFaceSvg(wrap, wrap.dataset.face);
+            });
+        }
         paint();
     }
 
@@ -722,6 +812,19 @@
         applyEmotion(speakPlan.id, speakPlan.steps[idx].classified, true);
     }
 
+    function setMouthOpen(amount) {
+        const a = Math.max(0, Math.min(1, Number(amount) || 0));
+        mouthOpen = a;
+        lipSyncActive = true;
+        if (!stageEl || !speakingId) return;
+        const wrap = stageEl.querySelector(
+            '.light-face-wrap[data-face="' + speakingId + '"]'
+        );
+        if (!wrap) return;
+        wrap.classList.add('is-talking', 'is-lip-sync');
+        wrap.style.setProperty('--mouth-open', String(0.18 + a * 0.82));
+    }
+
     function setSpeaking(agentId, chunkText) {
         speakingId = String(agentId || '').toLowerCase();
         cancelEmotionClear();
@@ -749,6 +852,14 @@
     function clearSpeaking() {
         speakingId = '';
         speakPlan = null;
+        mouthOpen = 0;
+        lipSyncActive = false;
+        if (stageEl) {
+            stageEl.querySelectorAll('.light-face-wrap.is-lip-sync').forEach((wrap) => {
+                wrap.classList.remove('is-lip-sync');
+                wrap.style.removeProperty('--mouth-open');
+            });
+        }
         pruneTo([...presentIds]);
         paint();
         scheduleEmotionClear();
@@ -759,7 +870,9 @@
         setPresent,
         setPresentMany,
         setVoices,
+        setColors,
         setSpeaking,
+        setMouthOpen,
         syncSpeakingProgress,
         clearSpeaking,
         emoteFromText,
