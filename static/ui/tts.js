@@ -17,6 +17,23 @@
     let activeSpeakBtn = null;
     /** @type {Set<HTMLAudioElement>} */
     const liveAudios = new Set();
+    /** True while a speak() job (all its chunks) is in progress. */
+    let speakBusy = false;
+    /**
+     * Auto-speak queue (group chat, etc.). Manual replay uses force and clears this.
+     * @type {Array<{text: string, agentId: string, options: object}>}
+     */
+    const speakQueue = [];
+    const MAX_SPEAK_QUEUE = 12;
+
+    /** @type {AudioContext|null} */
+    let audioCtx = null;
+    /** @type {AnalyserNode|null} */
+    let analyser = null;
+    /** @type {WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>} */
+    const mediaSources = new WeakMap();
+    let lipRaf = 0;
+    let lipSmooth = 0;
 
     const SPEAKER_SVG =
         '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
@@ -37,6 +54,92 @@
         return LH.faces || null;
     }
 
+    function prefersReducedMotion() {
+        try {
+            return Boolean(
+                global.matchMedia &&
+                    global.matchMedia('(prefers-reduced-motion: reduce)').matches
+            );
+        } catch {
+            return false;
+        }
+    }
+
+    function ensureAnalyser() {
+        const AC = global.AudioContext || global.webkitAudioContext;
+        if (!AC) return null;
+        if (!audioCtx) {
+            audioCtx = new AC();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.4;
+            // Route through analyser so MediaElementSource still reaches speakers.
+            analyser.connect(audioCtx.destination);
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+        }
+        return analyser;
+    }
+
+    function connectLipSyncSource(audio) {
+        const node = ensureAnalyser();
+        if (!node || !audioCtx || !audio) return false;
+        try {
+            let src = mediaSources.get(audio);
+            if (!src) {
+                src = audioCtx.createMediaElementSource(audio);
+                mediaSources.set(audio, src);
+                src.connect(node);
+            }
+            return true;
+        } catch (err) {
+            console.warn('TTS lip-sync connect failed:', err);
+            return false;
+        }
+    }
+
+    function stopLipSync() {
+        if (lipRaf) {
+            cancelAnimationFrame(lipRaf);
+            lipRaf = 0;
+        }
+        lipSmooth = 0;
+        const faces = facesApi();
+        if (faces && typeof faces.setMouthOpen === 'function') {
+            faces.setMouthOpen(0);
+        }
+    }
+
+    function startLipSync(audio, seq) {
+        stopLipSync();
+        if (prefersReducedMotion()) return;
+        if (!connectLipSyncSource(audio) || !analyser) return;
+        const data = new Uint8Array(analyser.fftSize);
+        const tick = () => {
+            if (seq !== speakSeq || currentAudio !== audio) {
+                stopLipSync();
+                return;
+            }
+            analyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i += 1) {
+                const v = (data[i] - 128) / 128;
+                sum += v * v;
+            }
+            const rms = Math.sqrt(sum / data.length);
+            // Quiet floor → open mouth on speech peaks (Kokoro WAV is fairly hot).
+            const raw = Math.min(1, Math.max(0, (rms - 0.018) / 0.22));
+            lipSmooth = lipSmooth * 0.5 + raw * 0.5;
+            const faces = facesApi();
+            if (faces && typeof faces.setMouthOpen === 'function') {
+                faces.setMouthOpen(lipSmooth);
+            }
+            lipRaf = global.requestAnimationFrame(tick);
+        };
+        lipRaf = global.requestAnimationFrame(tick);
+    }
+
     function clearSpeakingUi() {
         if (activeSpeakBtn) {
             activeSpeakBtn.classList.remove('is-speaking');
@@ -47,6 +150,7 @@
             el.classList.remove('is-speaking');
             el.setAttribute('aria-pressed', 'false');
         });
+        stopLipSync();
         const faces = facesApi();
         if (faces && typeof faces.clearSpeaking === 'function') {
             faces.clearSpeaking();
@@ -77,6 +181,8 @@
 
     function stop() {
         speakSeq += 1;
+        speakQueue.length = 0;
+        speakBusy = false;
         for (const audio of liveAudios) {
             try {
                 audio.pause();
@@ -278,6 +384,7 @@
             const onPlaying = () => {
                 if (seq !== speakSeq) return;
                 notifySpeaking(agentId || 'lumen', chunkText);
+                startLipSync(audio, seq);
             };
             const onTime = () => {
                 if (seq !== speakSeq) return;
@@ -317,20 +424,89 @@
         const force = Boolean(opts.force);
         const body = (text || '').trim();
         if (!body) return;
+        if (!serverReady) {
+            // Still show face emotes even if TTS server is down.
+            const faces = facesApi();
+            if (faces && typeof faces.emoteFromText === 'function') {
+                faces.emoteFromText(agentId || 'lumen', body, {
+                    first: true,
+                    persist: false,
+                });
+            }
+            return;
+        }
+        if (!force && !isVoiceOn()) {
+            const faces = facesApi();
+            if (faces && typeof faces.emoteFromText === 'function') {
+                faces.emoteFromText(agentId || 'lumen', body, {
+                    first: true,
+                    persist: false,
+                });
+            }
+            return;
+        }
+
+        const job = {
+            text: body,
+            agentId: agentId || 'lumen',
+            options: opts,
+        };
+
+        // Manual replay / explicit interrupt: drop the queue and cut in.
+        if (force) {
+            speakQueue.length = 0;
+            return runSpeakJob(job, { interrupt: true });
+        }
+
+        // Auto-speak (group): finish the current light before starting the next.
+        if (speakBusy) {
+            if (speakQueue.length >= MAX_SPEAK_QUEUE) {
+                speakQueue.shift();
+            }
+            speakQueue.push(job);
+            return;
+        }
+        return runSpeakJob(job, { interrupt: false });
+    }
+
+    /**
+     * Run one utterance (all sentence chunks). When it finishes cleanly, start
+     * the next queued auto-speak job if any.
+     */
+    async function runSpeakJob(job, { interrupt }) {
+        const body = job.text;
+        const agentId = job.agentId;
+        const opts = job.options || {};
         const faces = facesApi();
         if (faces && typeof faces.emoteFromText === 'function') {
-            faces.emoteFromText(agentId || 'lumen', body, {
+            faces.emoteFromText(agentId, body, {
                 first: true,
-                persist: serverReady && (force || isVoiceOn()),
+                persist: true,
             });
         }
-        if (!serverReady) return;
-        if (!force && !isVoiceOn()) return;
 
         const chunks = splitIntoSpeechChunks(body);
-        if (!chunks.length) return;
+        if (!chunks.length) {
+            pumpSpeakQueue();
+            return;
+        }
 
-        stop();
+        if (interrupt) {
+            // Same as former speak() start: cancel anything in flight.
+            speakSeq += 1;
+            for (const audio of liveAudios) {
+                try {
+                    audio.pause();
+                } catch {
+                    /* ignore */
+                }
+            }
+            liveAudios.clear();
+            currentAudio = null;
+            stopLipSync();
+        }
+
+        speakBusy = true;
         const seq = speakSeq;
 
         const speakBtn = opts.button || null;
@@ -343,8 +519,6 @@
 
         const voice = opts.voice || null;
 
-        // Pipeline: synthesize + decode N+1 while N is playing.
-        // Keep a resolved handle so we only early-handoff when N+1 is ready.
         let nextPrepared = null;
         let nextPreparedPromise = fetchSpeechBlob(chunks[0], agentId, voice)
             .then(prepareAudio)
@@ -352,40 +526,60 @@
                 nextPrepared = prepared;
                 return prepared;
             });
-        for (let i = 0; i < chunks.length; i += 1) {
-            if (seq !== speakSeq) return;
-            let prepared;
-            try {
-                prepared = await nextPreparedPromise;
-            } catch (err) {
-                console.warn('TTS failed:', err);
-                if (seq === speakSeq) clearSpeakingUi();
-                return;
-            }
-            if (seq !== speakSeq) return;
+        try {
+            for (let i = 0; i < chunks.length; i += 1) {
+                if (seq !== speakSeq) return;
+                let prepared;
+                try {
+                    prepared = await nextPreparedPromise;
+                } catch (err) {
+                    console.warn('TTS failed:', err);
+                    if (seq === speakSeq) clearSpeakingUi();
+                    return;
+                }
+                if (seq !== speakSeq) return;
 
-            const hasNext = i + 1 < chunks.length;
-            nextPrepared = null;
-            if (hasNext) {
-                nextPreparedPromise = fetchSpeechBlob(
-                    chunks[i + 1],
-                    agentId,
-                    voice
-                )
-                    .then(prepareAudio)
-                    .then((p) => {
-                        nextPrepared = p;
-                        return p;
-                    });
-            }
+                const hasNext = i + 1 < chunks.length;
+                nextPrepared = null;
+                if (hasNext) {
+                    nextPreparedPromise = fetchSpeechBlob(
+                        chunks[i + 1],
+                        agentId,
+                        voice
+                    )
+                        .then(prepareAudio)
+                        .then((p) => {
+                            nextPrepared = p;
+                            return p;
+                        });
+                }
 
-            await playPrepared(prepared, seq, {
-                canHandoff: hasNext ? () => nextPrepared != null : null,
-                agentId: agentId || 'lumen',
-                chunkText: chunks[i] || '',
-            });
+                await playPrepared(prepared, seq, {
+                    canHandoff: hasNext ? () => nextPrepared != null : null,
+                    agentId: agentId,
+                    chunkText: chunks[i] || '',
+                });
+            }
+            if (seq === speakSeq) clearSpeakingUi();
+        } finally {
+            // Only the job that still owns speakSeq may clear busy / pump.
+            // An interrupted job must not clobber a newer force/stop owner.
+            if (seq === speakSeq) {
+                speakBusy = false;
+                pumpSpeakQueue();
+            }
         }
-        if (seq === speakSeq) clearSpeakingUi();
+    }
+
+    function pumpSpeakQueue() {
+        if (speakBusy) return;
+        if (!isVoiceOn() || !serverReady) {
+            speakQueue.length = 0;
+            return;
+        }
+        const next = speakQueue.shift();
+        if (!next) return;
+        runSpeakJob(next, { interrupt: false });
     }
 
     /**
