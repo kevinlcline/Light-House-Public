@@ -194,6 +194,8 @@ def test_member_user_guide_uses_host_member_language() -> None:
     assert "human sibling accounts" not in text
     assert "ask Dad" not in text
 
+
+def test_user_setup_uses_host_member_language() -> None:
     html = (REPO_ROOT / "user-setup.html").read_text(encoding="utf-8")
     assert "Manage members" in html
     assert "Host voice" in html
@@ -264,6 +266,20 @@ def test_face_stage_hidden_overrides_flex_display() -> None:
     css = (UI_ROOT / "faces.css").read_text(encoding="utf-8")
     assert ".face-stage[hidden]" in css
     assert "display: none" in css
+
+
+def test_tts_drives_amplitude_lip_sync() -> None:
+    tts = (UI_ROOT / "tts.js").read_text(encoding="utf-8")
+    faces = (UI_ROOT / "faces.js").read_text(encoding="utf-8")
+    css = (UI_ROOT / "faces.css").read_text(encoding="utf-8")
+    assert "startLipSync" in tts
+    assert "createMediaElementSource" in tts
+    assert "getByteTimeDomainData" in tts
+    assert "setMouthOpen" in tts
+    assert "function setMouthOpen" in faces
+    assert "is-lip-sync" in faces
+    assert "--mouth-open" in css
+    assert "is-lip-sync" in css
 
 
 def test_tts_toggle_stays_visible_before_server_ready() -> None:

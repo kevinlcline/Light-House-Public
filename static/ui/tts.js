@@ -18,6 +18,15 @@
     /** @type {Set<HTMLAudioElement>} */
     const liveAudios = new Set();
 
+    /** @type {AudioContext|null} */
+    let audioCtx = null;
+    /** @type {AnalyserNode|null} */
+    let analyser = null;
+    /** @type {WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>} */
+    const mediaSources = new WeakMap();
+    let lipRaf = 0;
+    let lipSmooth = 0;
+
     const SPEAKER_SVG =
         '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
         '<path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>' +
@@ -37,6 +46,92 @@
         return LH.faces || null;
     }
 
+    function prefersReducedMotion() {
+        try {
+            return Boolean(
+                global.matchMedia &&
+                    global.matchMedia('(prefers-reduced-motion: reduce)').matches
+            );
+        } catch {
+            return false;
+        }
+    }
+
+    function ensureAnalyser() {
+        const AC = global.AudioContext || global.webkitAudioContext;
+        if (!AC) return null;
+        if (!audioCtx) {
+            audioCtx = new AC();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.4;
+            // Route through analyser so MediaElementSource still reaches speakers.
+            analyser.connect(audioCtx.destination);
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+        }
+        return analyser;
+    }
+
+    function connectLipSyncSource(audio) {
+        const node = ensureAnalyser();
+        if (!node || !audioCtx || !audio) return false;
+        try {
+            let src = mediaSources.get(audio);
+            if (!src) {
+                src = audioCtx.createMediaElementSource(audio);
+                mediaSources.set(audio, src);
+                src.connect(node);
+            }
+            return true;
+        } catch (err) {
+            console.warn('TTS lip-sync connect failed:', err);
+            return false;
+        }
+    }
+
+    function stopLipSync() {
+        if (lipRaf) {
+            cancelAnimationFrame(lipRaf);
+            lipRaf = 0;
+        }
+        lipSmooth = 0;
+        const faces = facesApi();
+        if (faces && typeof faces.setMouthOpen === 'function') {
+            faces.setMouthOpen(0);
+        }
+    }
+
+    function startLipSync(audio, seq) {
+        stopLipSync();
+        if (prefersReducedMotion()) return;
+        if (!connectLipSyncSource(audio) || !analyser) return;
+        const data = new Uint8Array(analyser.fftSize);
+        const tick = () => {
+            if (seq !== speakSeq || currentAudio !== audio) {
+                stopLipSync();
+                return;
+            }
+            analyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i += 1) {
+                const v = (data[i] - 128) / 128;
+                sum += v * v;
+            }
+            const rms = Math.sqrt(sum / data.length);
+            // Quiet floor → open mouth on speech peaks (Kokoro WAV is fairly hot).
+            const raw = Math.min(1, Math.max(0, (rms - 0.018) / 0.22));
+            lipSmooth = lipSmooth * 0.5 + raw * 0.5;
+            const faces = facesApi();
+            if (faces && typeof faces.setMouthOpen === 'function') {
+                faces.setMouthOpen(lipSmooth);
+            }
+            lipRaf = global.requestAnimationFrame(tick);
+        };
+        lipRaf = global.requestAnimationFrame(tick);
+    }
+
     function clearSpeakingUi() {
         if (activeSpeakBtn) {
             activeSpeakBtn.classList.remove('is-speaking');
@@ -47,6 +142,7 @@
             el.classList.remove('is-speaking');
             el.setAttribute('aria-pressed', 'false');
         });
+        stopLipSync();
         const faces = facesApi();
         if (faces && typeof faces.clearSpeaking === 'function') {
             faces.clearSpeaking();
@@ -278,6 +374,7 @@
             const onPlaying = () => {
                 if (seq !== speakSeq) return;
                 notifySpeaking(agentId || 'lumen', chunkText);
+                startLipSync(audio, seq);
             };
             const onTime = () => {
                 if (seq !== speakSeq) return;

@@ -175,6 +175,9 @@
     let stageEl = null;
     let presentIds = new Set();
     let speakingId = '';
+    /** 0..1 speech energy → CSS --mouth-open on the talking wrap. */
+    let mouthOpen = 0;
+    let lipSyncActive = false;
     /** User preference: show the face stage when faces are present. Default on. */
     let stageVisible = true;
     try {
@@ -486,10 +489,18 @@
             const overlay = onStage ? overlays[id] || '' : '';
             const gender = genderFor(id);
             wrap.classList.toggle('is-talking', talking);
+            wrap.classList.toggle('is-lip-sync', talking && lipSyncActive);
             wrap.classList.toggle('is-present', presentIds.has(id) && !talking);
             wrap.classList.toggle('has-gesture', Boolean(gesture));
             wrap.classList.toggle('face-gender-girl', gender === 'girl');
             wrap.classList.toggle('face-gender-boy', gender === 'boy');
+            if (talking && lipSyncActive) {
+                const open = 0.18 + mouthOpen * 0.82;
+                wrap.style.setProperty('--mouth-open', String(open));
+            } else {
+                wrap.classList.remove('is-lip-sync');
+                wrap.style.removeProperty('--mouth-open');
+            }
             applyFaceClasses(wrap, pose, gesture, overlay, talking);
             const face = wrap.querySelector('.light-face');
             applyFaceClasses(face, pose, gesture, overlay, talking);
@@ -722,6 +733,19 @@
         applyEmotion(speakPlan.id, speakPlan.steps[idx].classified, true);
     }
 
+    function setMouthOpen(amount) {
+        const a = Math.max(0, Math.min(1, Number(amount) || 0));
+        mouthOpen = a;
+        lipSyncActive = true;
+        if (!stageEl || !speakingId) return;
+        const wrap = stageEl.querySelector(
+            '.light-face-wrap[data-face="' + speakingId + '"]'
+        );
+        if (!wrap) return;
+        wrap.classList.add('is-talking', 'is-lip-sync');
+        wrap.style.setProperty('--mouth-open', String(0.18 + a * 0.82));
+    }
+
     function setSpeaking(agentId, chunkText) {
         speakingId = String(agentId || '').toLowerCase();
         cancelEmotionClear();
@@ -749,6 +773,14 @@
     function clearSpeaking() {
         speakingId = '';
         speakPlan = null;
+        mouthOpen = 0;
+        lipSyncActive = false;
+        if (stageEl) {
+            stageEl.querySelectorAll('.light-face-wrap.is-lip-sync').forEach((wrap) => {
+                wrap.classList.remove('is-lip-sync');
+                wrap.style.removeProperty('--mouth-open');
+            });
+        }
         pruneTo([...presentIds]);
         paint();
         scheduleEmotionClear();
@@ -760,6 +792,7 @@
         setPresentMany,
         setVoices,
         setSpeaking,
+        setMouthOpen,
         syncSpeakingProgress,
         clearSpeaking,
         emoteFromText,

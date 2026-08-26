@@ -131,6 +131,14 @@
     animation: face-talk 0.4s ease-in-out infinite;
 }
 
+/* Amplitude lip-sync: JS sets --mouth-open from TTS waveform (0..1 → closed..open). */
+.light-face-wrap.is-talking.is-lip-sync .face-mouth,
+.light-face-wrap.is-talking.is-lip-sync .face-mouth-smile,
+.light-face-wrap.is-talking.is-lip-sync .face-mouth-frown {
+    animation: none !important;
+    transform: scaleY(var(--mouth-open, 0.22));
+}
+
 .light-face.emo-smile .face-mouth,
 .light-face.emo-laugh .face-mouth,
 .light-face.emo-sad .face-mouth,
@@ -156,6 +164,21 @@
 .light-face.emo-laugh.is-talking .face-mouth-smile,
 .light-face.emo-excited.is-talking .face-mouth-smile {
     animation: face-talk 0.4s ease-in-out infinite;
+}
+
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-smile .face-mouth-smile,
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-laugh .face-mouth-smile,
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-excited .face-mouth-smile,
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-blush .face-mouth-smile,
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-anger .face-mouth-frown,
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-pause-smile .face-mouth-smile,
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-surprise .face-mouth {
+    animation: none !important;
+    transform: scaleY(var(--mouth-open, 0.22));
+}
+
+.light-face-wrap.is-talking.is-lip-sync .light-face.emo-surprise .face-mouth {
+    transform: scaleY(var(--mouth-open, 0.72)) scaleX(0.78);
 }
 
 .light-face.emo-laugh .face-mouth-smile {
