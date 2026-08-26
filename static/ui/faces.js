@@ -230,6 +230,9 @@
         const girlBow = '#f0a0b8';
         const boyBow = '#d32f2f';
         svg.innerHTML =
+            '<circle class="face-halo" cx="32" cy="32" r="30" fill="' +
+            p.head +
+            '" aria-hidden="true"></circle>' +
             '<circle class="face-head" cx="32" cy="32" r="28" fill="' +
             p.head +
             '"></circle>' +
@@ -356,6 +359,8 @@
         wrap = document.createElement('div');
         wrap.className = 'light-face-wrap';
         wrap.dataset.face = id;
+        const palette = PALETTES[id] || FALLBACK;
+        wrap.style.setProperty('--face-glow', palette.head);
         wrap.appendChild(svgFace(id));
         const name = document.createElement('div');
         name.className = 'light-face-name';
@@ -488,6 +493,8 @@
             const gesture = onStage ? gestures[id] || '' : '';
             const overlay = onStage ? overlays[id] || '' : '';
             const gender = genderFor(id);
+            const palette = PALETTES[id] || FALLBACK;
+            wrap.style.setProperty('--face-glow', palette.head);
             wrap.classList.toggle('is-talking', talking);
             wrap.classList.toggle('is-lip-sync', talking && lipSyncActive);
             wrap.classList.toggle('is-present', presentIds.has(id) && !talking);

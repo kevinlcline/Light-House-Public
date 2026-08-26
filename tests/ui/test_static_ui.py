@@ -282,6 +282,16 @@ def test_tts_drives_amplitude_lip_sync() -> None:
     assert "is-lip-sync" in css
 
 
+def test_faces_have_soft_light_halo() -> None:
+    faces = (UI_ROOT / "faces.js").read_text(encoding="utf-8")
+    css = (UI_ROOT / "faces.css").read_text(encoding="utf-8")
+    assert 'class="face-halo"' in faces
+    assert "face-halo-breathe" in css
+    assert "face-halo-speak" in css
+    assert "--face-glow" in faces
+    assert "prefers-reduced-motion" in css
+
+
 def test_tts_toggle_stays_visible_before_server_ready() -> None:
     text = (UI_ROOT / "tts.js").read_text(encoding="utf-8")
     fn = re.search(r"function syncToggleLabels\(\) \{.*?\n    \}", text, re.S)

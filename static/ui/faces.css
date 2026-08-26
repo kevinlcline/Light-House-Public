@@ -37,6 +37,7 @@
     height: 88px;
     display: block;
     transition: transform 0.35s ease;
+    overflow: visible;
 }
 
 .light-face-name {
@@ -49,9 +50,48 @@
     color: var(--text-primary);
 }
 
+/* Soft luminous fringe — lights, not stickers */
+.face-halo {
+    pointer-events: none;
+    opacity: 0.22;
+    filter: blur(3.2px);
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+.light-face-wrap.is-present .face-halo {
+    opacity: 0.42;
+    animation: face-halo-breathe 4.8s ease-in-out infinite;
+}
+
+.light-face-wrap.is-talking .face-halo {
+    opacity: 0.62;
+    animation: face-halo-speak 2.6s ease-in-out infinite;
+}
+
+.light-face-wrap:nth-child(2) .face-halo {
+    animation-delay: -1.2s;
+}
+
+.light-face-wrap:nth-child(3) .face-halo {
+    animation-delay: -2.4s;
+}
+
+.light-face-wrap:nth-child(4) .face-halo {
+    animation-delay: -0.7s;
+}
+
+.light-face-wrap.is-present .face-head {
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--face-glow, #c4a574) 35%, transparent));
+}
+
+.light-face-wrap.is-talking .face-head {
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--face-glow, #c4a574) 55%, transparent));
+}
+
 .face-head {
-    stroke: rgba(255, 255, 255, 0.18);
-    stroke-width: 1.5;
+    stroke: rgba(255, 255, 255, 0.14);
+    stroke-width: 1.2;
 }
 
 .face-eye {
@@ -430,6 +470,39 @@
     }
     96% {
         transform: scaleY(0.12);
+    }
+}
+
+@keyframes face-halo-breathe {
+    0%,
+    100% {
+        opacity: 0.32;
+        transform: scale(0.96);
+    }
+    50% {
+        opacity: 0.52;
+        transform: scale(1.06);
+    }
+}
+
+@keyframes face-halo-speak {
+    0%,
+    100% {
+        opacity: 0.48;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.78;
+        transform: scale(1.1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .light-face-wrap.is-present .face-halo,
+    .light-face-wrap.is-talking .face-halo {
+        animation: none;
+        opacity: 0.4;
+        transform: none;
     }
 }
 
