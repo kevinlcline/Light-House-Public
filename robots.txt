@@ -1,0 +1,24 @@
+# robots.txt — a polite note for search engines and AI fetchers.
+# It does NOT lock the site. It only says what we prefer they look at.
+#
+# Plain meaning for Light-House:
+#   • The public homepage (/) is fine to read and summarize.
+#   • Chat, notes, and APIs are behind a password anyway.
+
+# "*" means: every bot that doesn't have its own section below
+User-agent: *
+Allow: /
+
+# Google / Gemini (this is the line Gemini cares about)
+User-agent: Google-Extended
+Allow: /
+
+# Other common AI fetchers
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /

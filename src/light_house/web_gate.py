@@ -27,6 +27,18 @@ NO_STORE_HEADERS = {
     "Pragma": "no-cache",
 }
 
+# Public marketing / crawler paths (no session). House UI stays gated.
+_PUBLIC_GET_PATHS = frozenset(
+    {
+        "/robots.txt",
+        "/llms.txt",
+        "/favicon.ico",
+        "/favicon.png",
+        "/apple-touch-icon.png",
+    }
+)
+
+
 
 def apply_no_store_headers(response: Response) -> Response:
     for key, value in NO_STORE_HEADERS.items():
@@ -176,9 +188,28 @@ class WebGateMiddleware(BaseHTTPMiddleware):
         if path == "/v1/public/notify" and method == "POST":
             return await call_next(request)
 
+        # robots.txt / llms.txt / favicons — crawlers (Gemini, Googlebot, …) need these
+        # without hitting the password gate. Serve text files here with no-store so
+        # Cloudflare cannot keep a stale copy that still looks like an AI opt-out.
+        if path in _PUBLIC_GET_PATHS and method in ("GET", "HEAD"):
+            if path in ("/robots.txt", "/llms.txt"):
+                target = self.repo_root / path.lstrip("/")
+                if target.is_file():
+                    return FileResponse(
+                        target,
+                        media_type="text/plain; charset=utf-8",
+                        headers={
+                            **NO_STORE_HEADERS,
+                            "X-Robots-Tag": "all",
+                        },
+                    )
+                return Response("Not found", status_code=404)
+            return await call_next(request)
+
         authed = is_authenticated(request, settings)
 
-        if path == "/" and method == "GET":
+        # Public landing story at "/" for guests and fetchers (GET + HEAD).
+        if path == "/" and method in ("GET", "HEAD"):
             if authed:
                 response = await call_next(request)
                 return apply_no_store_headers(response)
