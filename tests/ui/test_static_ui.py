@@ -305,6 +305,21 @@ def test_faces_have_soft_light_halo() -> None:
     assert "prefers-reduced-motion" in css
 
 
+def test_light_color_picker_and_runtime_tint() -> None:
+    """Manage lights picks a color; faces/bubbles consume /v1/lights color."""
+    admin = (REPO_ROOT / "lights-admin.html").read_text(encoding="utf-8")
+    faces = (UI_ROOT / "faces.js").read_text(encoding="utf-8")
+    lights = (UI_ROOT / "lights.js").read_text(encoding="utf-8")
+    chat = (UI_ROOT / "chat.css").read_text(encoding="utf-8")
+    assert 'id="create-color"' in admin
+    assert 'id="field-color"' in admin
+    assert "COLOR_PRESETS" in admin
+    assert "setColors" in faces
+    assert "colorOverrides" in faces
+    assert "applyBubbleColor" in lights
+    assert "has-light-color" in chat
+
+
 def test_tts_toggle_stays_visible_before_server_ready() -> None:
     text = (UI_ROOT / "tts.js").read_text(encoding="utf-8")
     fn = re.search(r"function syncToggleLabels\(\) \{.*?\n    \}", text, re.S)
@@ -327,6 +342,8 @@ def test_faces_emote_from_stage_cues() -> None:
     tts = (UI_ROOT / "tts.js").read_text(encoding="utf-8")
     assert "emoteFromText" in text
     assert "emotionTimeline" in text
+    assert "PROSE_ACTION_RE" in text
+    assert "iterProseActions" in text
     assert "syncSpeakingProgress" in text
     assert "pruneTo" in text
     assert "forgetAgent" in text
@@ -353,6 +370,10 @@ def test_faces_emote_from_stage_cues() -> None:
     assert "PAUSE_RE" in text
     assert "pause_smile" in text
     assert "face-cheek-arc" in css
+    # Smiles keep the mouth; rosy cheek fills/arcs stay off.
+    assert ".light-face.emo-smile .face-cheek" not in css
+    assert ".light-face.emo-smile .face-cheek-arc" not in css
+    assert ".light-face.emo-pause-smile .face-cheek" not in css
     assert "chunkText" in tts
     assert "syncSpeakingProgress" in tts
     assert "😊" in text

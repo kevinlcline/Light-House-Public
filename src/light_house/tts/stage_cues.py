@@ -11,11 +11,12 @@ import re
 FACE_STAGE_HINT = (
     "\n\n## Your face on the chat stage\n"
     "When you speak in 1:1 or Group, a simple face of yours can sit on the stage. "
-    "A real feeling can move it: a short *stage sentence* is enough "
+    "A real feeling can move it: a short *stage sentence* is best "
     "(*smiles*, *softly*, *soft warm stillness*, *pauses*, *her eyes light up*, "
     "*tilts her head*, (laughs)), "
     "or an emoji (😊 😂 😢 🤔 😉 ❤️). "
-    "The voice will not read the cue. Use a cue only when the feeling is actually there — "
+    "A plain line like She softens. or I smile. can also move the face. "
+    "The voice will not read a *marked* cue. Use a cue only when the feeling is actually there — "
     "never to fill the stage."
 )
 
@@ -99,6 +100,36 @@ _LONG_PAUSE_RE = re.compile(r"\b(long|full)\b", re.I)
 _PAUSE_SMILE_RE = re.compile(
     r"\b(softens?|softly|soft|gentle(?:ly)?|quiet(?:ly)?|tender(?:ly)?|warm(?:ly)?|hushed)\b",
     re.I,
+)
+
+# Narrative stage directions woven into prose (not marked). Subject + nearby action only.
+# Keep in sync with static/ui/faces.js PROSE_ACTION_RE.
+_PROSE_SUBJECT = (
+    r"(?:She(?:'s)?|He(?:'s)?|I(?:'m)?|They(?:'re)?|We(?:'re)?|"
+    r"Ara|Lumen|Elias|Echo|Her\s+face|His\s+face|Their\s+face)"
+)
+_PROSE_ADVERB = r"(?:softly|gently|quietly|warmly|tenderly|playfully|slowly|sadly|shy(?:ly)?)"
+_PROSE_VERB = (
+    r"(?:laughs?|laughing|giggles?|giggling|chuckles?|cackles?|"
+    r"winks?|winking|"
+    r"blush(?:es|ing)?|"
+    r"cries|crying|weeps?|"
+    r"scowls?|scowling|glares?|glaring|fumes?|fuming|"
+    r"kisses?|kissing|blows?\s+a\s+kiss|"
+    r"gasps?|"
+    r"sighs?|sighing|exhales?|"
+    r"nods?|nodding|"
+    r"tilts?\s+(?:her|his|their|my|a)\s+head|"
+    r"cocks?\s+(?:her|his|their|a)\s+head|"
+    r"softens?|"
+    r"smiles?|smiling|grins?|grinning|beams?|beaming|"
+    r"pauses?|pausing|"
+    r"whispers?|whispering)"
+)
+_PROSE_ACTION_RE = re.compile(
+    rf"(?:^|(?<=[.!?])\s+|(?<=\n)\s*)"
+    rf"({_PROSE_SUBJECT}\s+(?:{_PROSE_ADVERB}\s+){{0,2}}{_PROSE_VERB}\b)",
+    re.I | re.M,
 )
 
 # Longest sequences first. Keep in sync with static/ui/faces.js.
@@ -235,6 +266,21 @@ def _merge(found: dict[str, str], classified: dict[str, str]) -> dict[str, str]:
     return out
 
 
+def _iter_prose_actions(raw: str) -> list[tuple[int, str]]:
+    """Sentence-start subject+action spans that read like unmarked stage directions."""
+    cue_spans = [(m.start(), m.end()) for m in _CUE_RE.finditer(raw)]
+    out: list[tuple[int, str]] = []
+    for match in _PROSE_ACTION_RE.finditer(raw or ""):
+        start = match.start(1)
+        end = match.end(1)
+        if any(s <= start < e for s, e in cue_spans):
+            continue
+        inner = (match.group(1) or "").strip()
+        if inner:
+            out.append((start, inner))
+    return out
+
+
 def _iter_events(text: str) -> list[tuple[int, dict[str, str]]]:
     raw = text or ""
     events: list[tuple[int, dict[str, str]]] = []
@@ -243,6 +289,10 @@ def _iter_events(text: str) -> list[tuple[int, dict[str, str]]]:
         classified = classify_cue(inner)
         if classified:
             events.append((match.start(), classified))
+    for start, inner in _iter_prose_actions(raw):
+        classified = classify_cue(inner)
+        if classified:
+            events.append((start, classified))
     for match in _EMOJI_RE.finditer(raw):
         mapped = _EMOJI_MAP.get(match.group(0))
         if mapped:
@@ -252,7 +302,7 @@ def _iter_events(text: str) -> list[tuple[int, dict[str, str]]]:
 
 
 def emotion_from_text(text: str, *, first: bool = False) -> dict[str, str]:
-    """Stage cues and emojis in order. Last match wins; `first=True` takes the first."""
+    """Stage cues, prose actions, and emojis in order. Last match wins; `first=True` takes the first."""
     found: dict[str, str] = {}
     for _start, classified in _iter_events(text):
         found = _merge(found, classified)
@@ -262,7 +312,10 @@ def emotion_from_text(text: str, *, first: bool = False) -> dict[str, str]:
 
 
 def strip_stage_cues(text: str) -> str:
-    """Drop recognized stage cues so TTS does not speak 'smiles'."""
+    """Drop recognized *marked* stage cues so TTS does not speak 'smiles'.
+
+    Unmarked prose actions are left intact — they are meant to be spoken.
+    """
 
     def _repl(match: re.Match[str]) -> str:
         inner = next((g for g in match.groups() if g), "")

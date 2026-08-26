@@ -82,6 +82,39 @@ def test_emoji_after_asterisk_wins() -> None:
     assert emotion_from_text("*smiles* wait 😢") == {"pose": "sad"}
 
 
+def test_prose_she_softens() -> None:
+    assert emotion_from_text("She softens, a quiet smile in her voice.")["pose"] == "soft"
+
+
+def test_prose_i_smile() -> None:
+    assert emotion_from_text("I smile at that.") == {"pose": "smile"}
+
+
+def test_prose_ara_tilts_head() -> None:
+    assert emotion_from_text("Ara tilts her head. Hello.") == {"gesture": "tilt"}
+
+
+def test_prose_skips_i_think() -> None:
+    assert emotion_from_text("I think we should wait.") == {}
+
+
+def test_prose_skips_noun_smile_without_action() -> None:
+    assert emotion_from_text("A smile means a lot.") == {}
+    assert emotion_from_text("She said a smile is hard.") == {}
+
+
+def test_prose_not_stripped_from_speech() -> None:
+    text = "She softens, then speaks. Hello."
+    out = strip_stage_cues(text)
+    assert "She softens" in out
+    assert "Hello" in out
+
+
+def test_prose_does_not_double_inside_marked_cue() -> None:
+    # Marked cue still wins cleanly; prose scanner skips inside *...*.
+    assert emotion_from_text("*She smiles* Hello.") == {"pose": "smile"}
+
+
 def test_emoji_nod_keeps_smile() -> None:
     assert emotion_from_text("Yes 😊👍") == {"pose": "smile", "gesture": "nod"}
 
