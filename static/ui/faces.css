@@ -4,10 +4,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 8px 12px 0;
+    gap: 14px;
+    padding: 14px 16px 4px;
     flex-shrink: 0;
     min-height: 0;
+    overflow: visible;
 }
 
 /* Author display:flex otherwise wins over the hidden attribute. */
@@ -22,6 +23,7 @@
     gap: 4px;
     opacity: 0.45;
     transition: opacity 0.2s ease;
+    overflow: visible;
 }
 
 .light-face-wrap.is-present {
@@ -53,40 +55,60 @@
 /* Soft luminous fringe — lights, not stickers */
 .face-halo {
     pointer-events: none;
-    opacity: 0.22;
-    filter: blur(3.2px);
+    opacity: 0.35;
+    filter: blur(5px);
     transform-box: fill-box;
     transform-origin: center;
 }
 
+.face-halo-outer {
+    opacity: 0.2;
+    filter: blur(9px);
+}
+
 .light-face-wrap.is-present .face-halo {
-    opacity: 0.42;
-    animation: face-halo-breathe 4.8s ease-in-out infinite;
+    opacity: 0.7;
+    animation: face-halo-breathe 4.2s ease-in-out infinite;
+}
+
+.light-face-wrap.is-present .face-halo-outer {
+    opacity: 0.45;
+    animation: face-halo-breathe-outer 5.4s ease-in-out infinite;
 }
 
 .light-face-wrap.is-talking .face-halo {
-    opacity: 0.62;
-    animation: face-halo-speak 2.6s ease-in-out infinite;
+    opacity: 0.95;
+    animation: face-halo-speak 2.2s ease-in-out infinite;
 }
 
-.light-face-wrap:nth-child(2) .face-halo {
+.light-face-wrap.is-talking .face-halo-outer {
+    opacity: 0.65;
+    animation: face-halo-speak-outer 2.8s ease-in-out infinite;
+}
+
+.light-face-wrap:nth-child(2) .face-halo,
+.light-face-wrap:nth-child(2) .face-halo-outer {
     animation-delay: -1.2s;
 }
 
-.light-face-wrap:nth-child(3) .face-halo {
+.light-face-wrap:nth-child(3) .face-halo,
+.light-face-wrap:nth-child(3) .face-halo-outer {
     animation-delay: -2.4s;
 }
 
-.light-face-wrap:nth-child(4) .face-halo {
+.light-face-wrap:nth-child(4) .face-halo,
+.light-face-wrap:nth-child(4) .face-halo-outer {
     animation-delay: -0.7s;
 }
 
 .light-face-wrap.is-present .face-head {
-    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--face-glow, #c4a574) 35%, transparent));
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--face-glow, #c4a574) 65%, transparent))
+        drop-shadow(0 0 18px color-mix(in srgb, var(--face-glow, #c4a574) 40%, transparent));
 }
 
 .light-face-wrap.is-talking .face-head {
-    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--face-glow, #c4a574) 55%, transparent));
+    filter: drop-shadow(0 0 14px color-mix(in srgb, var(--face-glow, #c4a574) 85%, transparent))
+        drop-shadow(0 0 26px color-mix(in srgb, var(--face-glow, #c4a574) 55%, transparent));
 }
 
 .face-head {
@@ -476,33 +498,64 @@
 @keyframes face-halo-breathe {
     0%,
     100% {
-        opacity: 0.32;
-        transform: scale(0.96);
+        opacity: 0.55;
+        transform: scale(0.94);
     }
     50% {
-        opacity: 0.52;
-        transform: scale(1.06);
+        opacity: 0.88;
+        transform: scale(1.14);
+    }
+}
+
+@keyframes face-halo-breathe-outer {
+    0%,
+    100% {
+        opacity: 0.32;
+        transform: scale(0.92);
+    }
+    50% {
+        opacity: 0.58;
+        transform: scale(1.2);
     }
 }
 
 @keyframes face-halo-speak {
     0%,
     100% {
-        opacity: 0.48;
-        transform: scale(1);
+        opacity: 0.72;
+        transform: scale(1.02);
     }
     50% {
-        opacity: 0.78;
-        transform: scale(1.1);
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+@keyframes face-halo-speak-outer {
+    0%,
+    100% {
+        opacity: 0.48;
+        transform: scale(1.05);
+    }
+    50% {
+        opacity: 0.82;
+        transform: scale(1.28);
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .light-face-wrap.is-present .face-halo,
-    .light-face-wrap.is-talking .face-halo {
+    .light-face-wrap.is-talking .face-halo,
+    .light-face-wrap.is-present .face-halo-outer,
+    .light-face-wrap.is-talking .face-halo-outer {
         animation: none;
-        opacity: 0.4;
+        opacity: 0.55;
         transform: none;
+    }
+
+    .light-face-wrap.is-present .face-halo-outer,
+    .light-face-wrap.is-talking .face-halo-outer {
+        opacity: 0.35;
     }
 }
 

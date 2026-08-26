@@ -230,7 +230,10 @@
         const girlBow = '#f0a0b8';
         const boyBow = '#d32f2f';
         svg.innerHTML =
-            '<circle class="face-halo" cx="32" cy="32" r="30" fill="' +
+            '<circle class="face-halo face-halo-outer" cx="32" cy="32" r="34" fill="' +
+            p.head +
+            '" aria-hidden="true"></circle>' +
+            '<circle class="face-halo" cx="32" cy="32" r="31" fill="' +
             p.head +
             '" aria-hidden="true"></circle>' +
             '<circle class="face-head" cx="32" cy="32" r="28" fill="' +
