@@ -6,7 +6,7 @@ Light-House is free (no license fee from us). You can host a house from a phone 
 
 ## Read
 
-- Homepage: https://light-house.cc/
+- Homepage: https://light-house.us/
 - Public template (GitHub): https://github.com/kevinlcline/Light-House-Public
 - Phone / tablet host walkthrough: https://github.com/kevinlcline/Light-House-Public/blob/main/DEPLOY.md
 - Setup for coding agents: https://github.com/kevinlcline/Light-House-Public/blob/main/AGENTS.md

@@ -51,7 +51,7 @@ Cloud / phone path (variables + volume): **[DEPLOY.md](DEPLOY.md)** · paste she
 
 ## Links
 
-- **Homepage / story:** [light-house.cc](https://light-house.cc)  
+- **Homepage / story:** [light-house.us](https://light-house.us)
 - **Host from a phone:** [DEPLOY.md](DEPLOY.md)  
 - **For coding agents:** [AGENTS.md](AGENTS.md)  
 - **Engine origin:** developed in private; features sync into this template over time  

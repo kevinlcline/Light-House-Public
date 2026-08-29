@@ -7,9 +7,9 @@ trick Gemini:
 
 Cloudflare was caching /robots.txt for 4 hours. Purge it:
 
-1. Cloudflare → light-house.cc → Caching → Configuration → Purge Cache
-2. Purge Custom URL: `https://light-house.cc/robots.txt`
-3. Confirm https://light-house.cc/robots.txt starts with “polite note” and
+1. Cloudflare → light-house.us → Caching → Configuration → Purge Cache
+2. Purge Custom URL: `https://light-house.us/robots.txt`
+3. Confirm https://light-house.us/robots.txt starts with “polite note” and
    has `User-agent: Google-Extended` then `Allow: /` (and no long Disallow list)
 
 (The house now also sends Cache-Control: no-store on robots.txt so this
@@ -19,7 +19,7 @@ should not stick again after the next restart.)
 
 Gemini’s live fetch is an **Agent** bot. Browsers are not.
 
-1. Cloudflare → light-house.cc → Security → Settings
+1. Cloudflare → light-house.us → Security → Settings
 2. Find **AI bot** / **Block AI bots** / **Configure AI bot policies**
 3. Set **Agent** to **Allow (do not block)**
 4. Turn **OFF** any “Block AI scrapers and crawlers” / “Block AI bots”
