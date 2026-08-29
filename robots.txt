@@ -22,3 +22,5 @@ Allow: /
 
 User-agent: ClaudeBot
 Allow: /
+
+Sitemap: https://light-house.us/sitemap.xml

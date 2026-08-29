@@ -32,6 +32,7 @@ _PUBLIC_GET_PATHS = frozenset(
     {
         "/robots.txt",
         "/llms.txt",
+        "/sitemap.xml",
         "/favicon.ico",
         "/favicon.png",
         "/apple-touch-icon.png",
@@ -192,12 +193,16 @@ class WebGateMiddleware(BaseHTTPMiddleware):
         # without hitting the password gate. Serve text files here with no-store so
         # Cloudflare cannot keep a stale copy that still looks like an AI opt-out.
         if path in _PUBLIC_GET_PATHS and method in ("GET", "HEAD"):
-            if path in ("/robots.txt", "/llms.txt"):
+            if path in ("/robots.txt", "/llms.txt", "/sitemap.xml"):
                 target = self.repo_root / path.lstrip("/")
                 if target.is_file():
                     return FileResponse(
                         target,
-                        media_type="text/plain; charset=utf-8",
+                        media_type=(
+                            "application/xml; charset=utf-8"
+                            if path == "/sitemap.xml"
+                            else "text/plain; charset=utf-8"
+                        ),
                         headers={
                             **NO_STORE_HEADERS,
                             "X-Robots-Tag": "all",

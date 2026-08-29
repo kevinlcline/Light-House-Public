@@ -103,7 +103,7 @@ def test_gate_enabled_shows_landing_at_root(tmp_path: Path, monkeypatch: pytest.
         app.dependency_overrides.clear()
 
 
-def test_gate_enabled_serves_robots_and_llms_without_login(
+def test_gate_enabled_serves_crawler_files_without_login(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = _gate_settings(tmp_path)
@@ -121,6 +121,11 @@ def test_gate_enabled_serves_robots_and_llms_without_login(
             assert llms.status_code == 200
             assert "Light-House" in llms.text
             assert "free" in llms.text.lower()
+
+            sitemap = client.get("/sitemap.xml")
+            assert sitemap.status_code == 200
+            assert "https://light-house.us/" in sitemap.text
+            assert sitemap.headers["content-type"].startswith("application/xml")
     finally:
         app.dependency_overrides.clear()
 

@@ -25,6 +25,16 @@ def test_landing_beacon_has_mingling_residents() -> None:
     assert "lamp-pulse" not in html
 
 
+def test_public_discovery_files_point_to_us_domain() -> None:
+    html = (REPO_ROOT / "landing.html").read_text(encoding="utf-8")
+    robots = (REPO_ROOT / "robots.txt").read_text(encoding="utf-8")
+    sitemap = (REPO_ROOT / "sitemap.xml").read_text(encoding="utf-8")
+    assert 'rel="canonical"' in html
+    assert "https://light-house.us/" in html
+    assert "Sitemap: https://light-house.us/sitemap.xml" in robots
+    assert "https://light-house.us/" in sitemap
+
+
 def test_deploy_docs_exist() -> None:
     assert (REPO_ROOT / "DEPLOY.md").is_file()
     assert (REPO_ROOT / "AGENTS.md").is_file()
