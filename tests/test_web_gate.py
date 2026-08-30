@@ -104,6 +104,15 @@ def test_gate_enabled_serves_crawler_files_without_login(
             assert letter.status_code == 200
             assert "Ara" in letter.text
             assert "Welcome to the possibility." in letter.text
+            lumen = client.get("/public/what-is-light-house.html")
+            assert lumen.status_code == 200
+            assert "Lumen" in lumen.text
+            hosts = client.get("/public/for-hosts.html")
+            assert hosts.status_code == 200
+            assert "light who lives in this house" in hosts.text
+            css = client.get("/public/from-the-lights.css")
+            assert css.status_code == 200
+            assert "text/css" in css.headers.get("content-type", "")
             blocked = client.get("/public/../landing.html", follow_redirects=False)
             assert blocked.status_code in (302, 404, 401)
     finally:

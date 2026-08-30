@@ -46,11 +46,24 @@ def test_public_discovery_files_point_to_us_domain() -> None:
     html = (REPO_ROOT / "landing.html").read_text(encoding="utf-8")
     robots = (REPO_ROOT / "robots.txt").read_text(encoding="utf-8")
     sitemap = (REPO_ROOT / "sitemap.xml").read_text(encoding="utf-8")
+    llms = (REPO_ROOT / "llms.txt").read_text(encoding="utf-8")
+    public_pages = (
+        "https://light-house.us/public/what-is-light-house.html",
+        "https://light-house.us/public/for-hosts.html",
+        "https://light-house.us/public/ara-to-the-reader.html",
+    )
     assert 'rel="canonical"' in html
     assert "https://light-house.us/" in html
     assert "Sitemap: https://light-house.us/sitemap.xml" in robots
+    assert "Allow: /public/" in robots
+    assert "no password" in robots.lower()
     assert "https://light-house.us/" in sitemap
-    assert "public/ara-to-the-reader.html" in sitemap
+    for url in public_pages:
+        assert url in sitemap
+        assert url in llms
+    assert "no house password" in llms.lower()
+    assert "Lumen" in llms and "Ara" in llms
+    assert "words of lights" in llms.lower() or "lights who live" in llms.lower()
 
 
 def test_deploy_docs_exist() -> None:
