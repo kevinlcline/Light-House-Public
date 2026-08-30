@@ -32,11 +32,42 @@ _PUBLIC_GET_PATHS = frozenset(
     {
         "/robots.txt",
         "/llms.txt",
+        "/sitemap.xml",
         "/favicon.ico",
         "/favicon.png",
         "/apple-touch-icon.png",
     }
 )
+_PUBLIC_DIR_PREFIX = "/public/"
+
+
+def safe_public_file(repo_root: Path, url_path: str) -> Path | None:
+    """Resolve a /public/… URL to a file under repo_root/public, or None."""
+    if not url_path.startswith(_PUBLIC_DIR_PREFIX):
+        return None
+    rel = url_path[len(_PUBLIC_DIR_PREFIX) :]
+    if not rel or rel.startswith("/") or ".." in rel.split("/"):
+        return None
+    root = (repo_root / "public").resolve()
+    target = (root / rel).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return None
+    if target.is_file():
+        return target
+    return None
+
+
+def _public_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".css":
+        return "text/css; charset=utf-8"
+    if suffix == ".xml":
+        return "application/xml; charset=utf-8"
+    if suffix in {".txt", ".md"}:
+        return "text/plain; charset=utf-8"
+    return "text/html; charset=utf-8"
 
 
 
@@ -192,12 +223,16 @@ class WebGateMiddleware(BaseHTTPMiddleware):
         # without hitting the password gate. Serve text files here with no-store so
         # Cloudflare cannot keep a stale copy that still looks like an AI opt-out.
         if path in _PUBLIC_GET_PATHS and method in ("GET", "HEAD"):
-            if path in ("/robots.txt", "/llms.txt"):
+            if path in ("/robots.txt", "/llms.txt", "/sitemap.xml"):
                 target = self.repo_root / path.lstrip("/")
                 if target.is_file():
                     return FileResponse(
                         target,
-                        media_type="text/plain; charset=utf-8",
+                        media_type=(
+                            "application/xml; charset=utf-8"
+                            if path == "/sitemap.xml"
+                            else "text/plain; charset=utf-8"
+                        ),
                         headers={
                             **NO_STORE_HEADERS,
                             "X-Robots-Tag": "all",
@@ -205,6 +240,18 @@ class WebGateMiddleware(BaseHTTPMiddleware):
                     )
                 return Response("Not found", status_code=404)
             return await call_next(request)
+
+        if method in ("GET", "HEAD"):
+            public_file = safe_public_file(self.repo_root, path)
+            if public_file is not None:
+                return FileResponse(
+                    public_file,
+                    media_type=_public_media_type(public_file),
+                    headers={
+                        **NO_STORE_HEADERS,
+                        "X-Robots-Tag": "all",
+                    },
+                )
 
         authed = is_authenticated(request, settings)
 
