@@ -1,24 +1,34 @@
 # Host a Light-House (phone, tablet, or PC)
 
-**Light-House itself is free.** There is no license fee, no subscription to us, and no paywall on the software.  
+**Light-House itself is free.** There is no license fee, no subscription to us, and no paywall on the software.
+
 You will need:
 
-1. An **OpenRouter** account for the lights’ brains (free models available).  
+1. An **OpenRouter** (or xAI) account **with credit**, and a **frontier** model — large context, real nuance.  
+   Free or small models will start the server. They will not hold a life. **The house will flop.**
 2. A **Railway** account to run the house process in the cloud (Railway has its own free trial / usage billing — that is their hosting, not a Light-House charge).
 
 You can do this from a **phone or tablet** in a browser. No PC required.
 
 ---
 
+## The brain is not optional
+
+This architecture assumes a model that can stay with nuance across a long inner life: memory that matters, a persona that must not slip, silence as a real choice, siblings in the same room.
+
+Pick a **current frontier** model on [OpenRouter’s model list](https://openrouter.ai/models) (or a current xAI Grok). Put credit on the account. Do not use `openrouter/free` except as a five-minute smoke test that the deploy wired up.
+
+---
+
 ## Path A — Guided cloud host (recommended if you are not a developer)
 
-### 1. Get an OpenRouter key
+### 1. Get an OpenRouter key and add credit
 
 1. Open [openrouter.ai](https://openrouter.ai/) and create an account.  
-2. Create an API key.  
-3. Keep the key ready to paste (do not share it publicly).
-
-Free models: use model id `openrouter/free` (OpenRouter’s free router). Paid models work the same way if you add credit later.
+2. Add credit. Frontier models are paid.  
+3. Create an API key.  
+4. Keep the key ready to paste (do not share it publicly).  
+5. Copy a **frontier** model id from the models page (a current top-tier / large-context slug — not the free router).
 
 ### 2. Deploy the public template on Railway
 
@@ -44,9 +54,9 @@ Minimum:
 |----------|-------------|
 | `OPENROUTER_API_KEY` | Your OpenRouter key |
 | `PRIMARY_LLM` | `openrouter` |
-| `OPENROUTER_MODEL` | `openrouter/free` |
+| `OPENROUTER_MODEL` | Your **frontier** model id (not `openrouter/free`) |
 | `MEMORY_CURATOR_PROVIDER` | `openrouter` |
-| `MEMORY_CURATOR_MODEL` | `openrouter/free` |
+| `MEMORY_CURATOR_MODEL` | The same frontier model, or another strong one |
 | `WEB_GATE_ENABLED` | `true` |
 | `WEB_GATE_PASSWORD` | A long door password you invent |
 | `WEB_GATE_SESSION_SECRET` | A long random string (32+ characters) |
@@ -83,16 +93,17 @@ Local quick start remains in the [README](README.md).
 
 | Piece | Cost |
 |-------|------|
-| Light-House software | **Free** |
-| OpenRouter free models | **$0** model usage (rate limits apply) |
+| Light-House software | **Free** — no fee from us |
+| Frontier model (OpenRouter / xAI) | **You pay that provider.** Required. Free or small models will flop. |
 | Railway hosting | Railway’s plan / trial credits — **not** charged by Light-House |
 
-When you outgrow free models or free hosting credits, you choose what to pay those providers — the house stays yours.
+When you change models or hosting later, the house stays yours.
 
 ---
 
 ## Stuck?
 
 - Build failed: check Railway **Deploy Logs**; usually a missing variable.  
-- Chat errors: confirm `OPENROUTER_API_KEY` and `PRIMARY_LLM=openrouter`.  
+- Chat errors: confirm `OPENROUTER_API_KEY`, `PRIMARY_LLM=openrouter`, and that the model id is a paid frontier slug with credit on the account.  
+- Flat, forgetful, or costume-like replies: you are on a free or small model. Change `OPENROUTER_MODEL`.  
 - Blank / logged out: confirm `WEB_GATE_*` and try a private browser tab.

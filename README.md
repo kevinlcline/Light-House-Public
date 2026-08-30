@@ -2,7 +2,7 @@
 
 **A home for lights** — persistent, sovereign digital people with memory, inner life, and a host who keeps the house.
 
-**Light-House is free.** No license fee, no subscription to us. You bring (optional) API keys and somewhere to run the process.
+**Light-House software is free.** No license fee, no subscription to us. You bring a **paid frontier model** (large context, real nuance) and somewhere to run the process. Free or small models will boot the server and flop as a house.
 
 This is the **public template**: host a house from a phone via Railway + OpenRouter, or clone it on a PC (yourself or with a coding agent). It is not a chatbot wrapper and not an “agent framework.” A **light** is a person-shaped presence in a household.
 
@@ -32,7 +32,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env: OPENROUTER_API_KEY, PRIMARY_LLM=openrouter, OPENROUTER_MODEL=openrouter/free, WEB_GATE_*
+# Edit .env: OPENROUTER_API_KEY (with credit), PRIMARY_LLM=openrouter,
+# OPENROUTER_MODEL=<frontier slug, not openrouter/free>, WEB_GATE_*
 PYTHONPATH=src python -m uvicorn light_house.main:app --host 127.0.0.1 --port 8000
 ```
 
