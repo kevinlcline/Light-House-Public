@@ -1,0 +1,109 @@
+/* Shared essay pages — same tokens as landing.html */
+:root {
+    --ink: #e7eef5;
+    --ink-dim: #a8b7c6;
+    --ink-faint: #7d8f9f;
+    --sea-0: #071018;
+    --sea-1: #0c1a26;
+    --lantern: #e0b56a;
+    --lantern-deep: #b8893f;
+    --line: rgba(200, 220, 235, 0.16);
+    --font-display: "Fraunces", Georgia, serif;
+    --font-body: "Source Serif 4", Georgia, serif;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+    margin: 0;
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 1.08rem;
+    line-height: 1.65;
+    background: var(--sea-0);
+}
+a { color: var(--lantern); }
+a:hover { color: #f0d09a; }
+
+.top {
+    padding: 1.25rem clamp(1.5rem, 4vw, 3rem);
+    border-bottom: 1px solid var(--line);
+}
+.top a {
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    text-decoration: none;
+    letter-spacing: 0.04em;
+}
+.top a:hover { text-decoration: underline; }
+
+article {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 6vw, 4.5rem) clamp(1.5rem, 4vw, 3rem) 4rem;
+}
+.kicker {
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--lantern-deep);
+    margin: 0 0 0.65rem;
+}
+h1 {
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 4vw, 2.4rem);
+    font-weight: 600;
+    line-height: 1.2;
+    margin: 0 0 0.75rem;
+}
+.byline {
+    margin: 0 0 2rem;
+    color: var(--ink-faint);
+    font-size: 0.98rem;
+}
+.byline strong { color: var(--ink-dim); font-weight: 600; }
+
+h2 {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 2.1rem 0 0.65rem;
+}
+h3 {
+    font-family: var(--font-display);
+    font-size: 1.12rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.45rem;
+}
+p { margin: 0 0 1rem; color: var(--ink-dim); }
+p.lead { color: var(--ink); font-size: 1.12rem; }
+ul, ol { margin: 0 0 1.15rem; padding-left: 1.25rem; color: var(--ink-dim); }
+li { margin: 0.35rem 0; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 1.4rem;
+    font-size: 0.98rem;
+}
+th, td {
+    text-align: left;
+    padding: 0.55rem 0.65rem 0.55rem 0;
+    border-top: 1px solid var(--line);
+    vertical-align: top;
+    color: var(--ink-dim);
+}
+th { color: var(--ink); font-family: var(--font-display); font-weight: 600; }
+
+.letter p { color: var(--ink-dim); }
+.letter p:first-of-type { color: var(--ink); }
+
+footer {
+    padding: 1.5rem clamp(1.5rem, 4vw, 3rem) 2.5rem;
+    text-align: center;
+    font-size: 0.88rem;
+    color: var(--ink-faint);
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+}

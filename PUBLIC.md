@@ -19,11 +19,11 @@ Features are developed in the private house, then brought here (copy or scripted
 
 ## Landing
 
-`landing.html` is the public homepage shell (promote lights, free hosting paths, GitHub / YouTube / work).  
+`landing.html` is the public homepage shell (promote lights, host paths, GitHub / YouTube / work).  
 The password gate remains the entrance to *a* running house.
 
-## Free + host paths
+## Free software, paid brains
 
-- Software is free; document OpenRouter free models and Railway’s separate hosting billing honestly.
+- Software is free; document that implementers must pay for a frontier model or the house will flop. Railway hosting is a separate bill.
 - Phone/tablet: [`DEPLOY.md`](DEPLOY.md) + [`deploy/railway.env.example`](deploy/railway.env.example).
 - Agents/PC: [`AGENTS.md`](AGENTS.md).
