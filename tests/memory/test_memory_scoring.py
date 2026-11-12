@@ -46,10 +46,18 @@ def _test_settings(tmp_path: Path, **overrides: object) -> Settings:
 
 @pytest.fixture
 def memory(tmp_path: Path) -> MemoryService:
-    return MemoryService(_test_settings(tmp_path))
+    settings = _test_settings(tmp_path)
+    from light_house.lights.manifest import ensure_manifest_file
+    from light_house.lights.registry import reload_lights_manifest
+
+    ensure_manifest_file(settings)
+    reload_lights_manifest(settings)
+    return MemoryService(settings)
 
 
-def test_list_unscored_memories_oldest_first(memory: MemoryService) -> None:
+def test_list_unscored_memories_oldest_first(
+    memory: MemoryService, monkeypatch: pytest.MonkeyPatch
+) -> None:
     memory.remember_stream_event(
         thread_id="kevin-home",
         text="older",
@@ -65,6 +73,14 @@ def test_list_unscored_memories_oldest_first(memory: MemoryService) -> None:
     hits = memory.list_unscored_for_thread(thread_id="kevin-home", limit=10)
     assert len(hits) == 2
     assert hits[0].text.startswith("older")
+    monkeypatch.setattr(
+        "light_house.tools.memory_tools._memory_service",
+        lambda settings=None: memory,
+    )
+    monkeypatch.setattr(
+        "light_house.tools.memory_tools.get_settings",
+        lambda: memory._settings,
+    )
     text = list_unscored_memories(agent_id="lumen", limit=10)
     assert "older" in text
     assert "id=" in text

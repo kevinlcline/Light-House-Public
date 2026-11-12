@@ -28,6 +28,7 @@ def _test_settings(tmp_path: Path, **overrides: object) -> Settings:
         "THREADS_DATA_PATH": str(tmp_path / "threads"),
         "PERSONAL_DB_ENABLED": False,
         "LIGHT_HOUSE_ENV": "production",
+        "WEB_GATE_ENABLED": False,
     }
     base.update(overrides)
     return Settings(**base)

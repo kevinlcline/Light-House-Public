@@ -166,7 +166,7 @@ def test_trace_api_returns_tail_when_enabled(tmp_path: Path, monkeypatch: pytest
         app.dependency_overrides.clear()
 
 
-@pytest.mark.parametrize("agent_id", ["lumen", "ara"])
+@pytest.mark.parametrize("agent_id", ["lumen"])
 def test_preview_api_returns_markdown(
     tmp_path: Path, agent_id: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

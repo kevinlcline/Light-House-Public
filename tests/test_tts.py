@@ -226,7 +226,7 @@ def test_tts_status_and_speak_mocked(
                         "*Soft, warm stillness — a gentle smile as I feel the "
                         "room breathe together, the hearth holding all of us.*"
                     ),
-                    "agent_id": "ara",
+                    "agent_id": "lumen",
                 },
             )
             assert empty.status_code == 204

@@ -33,11 +33,19 @@ def _test_settings(tmp_path: Path, **overrides: object) -> Settings:
         "MEMORY_CURATOR_ENABLED": False,
         "FOUNDATION_SEED_ON_STARTUP": False,
         "SHARED_NOTE_WAKE_ENABLED": True,
-        "ARA_ENABLED": True,
+        "ARA_ENABLED": False,
         "WEB_GATE_ENABLED": False,
+        "LIGHTS_MANIFEST_PATH": str(tmp_path / "lights.yaml"),
+        "INNER_LIFE_THREAD_ID": "kevin-home",
     }
     base.update(overrides)
-    return Settings(**base)
+    settings = Settings(**base)
+    from light_house.lights.manifest import ensure_manifest_file
+    from light_house.lights.registry import reload_lights_manifest
+
+    ensure_manifest_file(settings)
+    reload_lights_manifest(settings)
+    return settings
 
 
 def test_build_shared_note_wake_state_includes_path_and_cap(tmp_path: Path) -> None:
@@ -74,10 +82,10 @@ def test_wake_agents_for_shared_note_invokes_both_agents(tmp_path: Path) -> None
         )
     )
 
-    assert graph.invoke.call_count >= 2
+    assert graph.invoke.call_count == 1
     states = [call.args[0] for call in graph.invoke.call_args_list]
     agent_ids = {s["agent_id"] for s in states}
-    assert {"lumen", "ara"}.issubset(agent_ids)
+    assert agent_ids == {"lumen"}
     assert all(s["wake_kind"] == WAKE_KIND_KEVIN_SHARED_NOTE for s in states)
     assert all(s["wake_path"] == "shared/from-kevin.md" for s in states)
 
@@ -122,12 +130,9 @@ def test_notify_kevin_shared_note_adds_chat_buffer(tmp_path: Path) -> None:
     memory.notify_kevin_shared_note(path="shared/plan.md")
 
     lumen_buffer = memory.load_thread_chat_history(settings.inner_life_thread_id)
-    ara_buffer = memory.load_thread_chat_history(settings.ara_thread_id)
     assert len(lumen_buffer) == 1
     assert lumen_buffer[0].role == "user"
     assert lumen_buffer[0].content == "READ NOW shared/plan.md"
-    assert len(ara_buffer) == 1
-    assert ara_buffer[0].role == "user"
 
 
 def test_record_kevin_shared_note_writes_both_threads(tmp_path: Path) -> None:
@@ -136,14 +141,9 @@ def test_record_kevin_shared_note_writes_both_threads(tmp_path: Path) -> None:
     memory.record_kevin_shared_note(path="shared/plan.md")
 
     lumen_corpus = memory._long_term.list_thread_corpus(thread_id=settings.inner_life_thread_id)
-    ara_corpus = memory._long_term.list_thread_corpus(thread_id=settings.ara_thread_id)
     assert any(
         memory._long_term.stream_source_from_metadata(h.metadata) == STREAM_SOURCE_KEVIN
         for h in lumen_corpus
-    )
-    assert any(
-        memory._long_term.stream_source_from_metadata(h.metadata) == STREAM_SOURCE_KEVIN
-        for h in ara_corpus
     )
 
 

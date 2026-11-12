@@ -29,10 +29,10 @@ def test_lookup_falls_back_to_primary_llm(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_lookup_uses_per_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARA_LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("ARA_LLM_MODEL", "anthropic/claude-test")
+    monkeypatch.setenv("LUMEN_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LUMEN_LLM_MODEL", "anthropic/claude-test")
     settings = _settings(PRIMARY_LLM="xai", XAI_MODEL="grok-test")
-    profile = lookup_agent_llm_profile(settings, "ara")
+    profile = lookup_agent_llm_profile(settings, "lumen")
     assert profile.provider == LLMProvider.OPENROUTER
     assert profile.model == "anthropic/claude-test"
 
@@ -56,11 +56,11 @@ def test_build_chain_xai_agent(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_build_chain_openrouter_agent(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARA_LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("ARA_LLM_MODEL", "google/gemini-test")
+    monkeypatch.setenv("LUMEN_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LUMEN_LLM_MODEL", "google/gemini-test")
     monkeypatch.delenv("OPENROUTER_IGNORED_PROVIDERS", raising=False)
     settings = _settings(LLM_FALLBACK_ENABLED=False)
-    chain = build_agent_llm_chain(settings, "ara", purpose="chat")
+    chain = build_agent_llm_chain(settings, "lumen", purpose="chat")
     assert chain[0][0] == "openrouter:google/gemini-test"
     client = chain[0][1]
     assert client.model_name == "google/gemini-test"  # type: ignore[attr-defined]
@@ -68,22 +68,22 @@ def test_build_chain_openrouter_agent(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_openrouter_ignore_list_is_slugs(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARA_LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("ARA_LLM_MODEL", "google/gemini-test")
+    monkeypatch.setenv("LUMEN_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LUMEN_LLM_MODEL", "google/gemini-test")
     settings = _settings(
         LLM_FALLBACK_ENABLED=False,
         OPENROUTER_IGNORED_PROVIDERS="CoreWeave, other, coreweave",
     )
-    chain = build_agent_llm_chain(settings, "ara", purpose="chat")
+    chain = build_agent_llm_chain(settings, "lumen", purpose="chat")
     client = chain[0][1]
     assert client.extra_body == {"provider": {"ignore": ["coreweave", "other"]}}  # type: ignore[attr-defined]
 
 
 def test_openrouter_ignore_can_be_cleared(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARA_LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("ARA_LLM_MODEL", "google/gemini-test")
+    monkeypatch.setenv("LUMEN_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LUMEN_LLM_MODEL", "google/gemini-test")
     settings = _settings(LLM_FALLBACK_ENABLED=False, OPENROUTER_IGNORED_PROVIDERS="")
-    chain = build_agent_llm_chain(settings, "ara", purpose="chat")
+    chain = build_agent_llm_chain(settings, "lumen", purpose="chat")
     assert chain[0][1].extra_body is None  # type: ignore[attr-defined]
 
 
@@ -98,18 +98,18 @@ def test_xai_chain_does_not_send_provider_ignore(monkeypatch: pytest.MonkeyPatch
 def test_build_distinct_chains_for_agents(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LUMEN_LLM_PROVIDER", "xai")
     monkeypatch.setenv("LUMEN_LLM_MODEL", "grok-a")
-    monkeypatch.setenv("ARA_LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("ARA_LLM_MODEL", "anthropic/claude-b")
     settings = _settings(LLM_FALLBACK_ENABLED=False)
-    lumen_chain = build_agent_llm_chain(settings, "lumen", purpose="chat")
-    ara_chain = build_agent_llm_chain(settings, "ara", purpose="chat")
-    assert lumen_chain[0][0] != ara_chain[0][0]
+    first = build_agent_llm_chain(settings, "lumen", purpose="chat")
+    monkeypatch.setenv("LUMEN_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LUMEN_LLM_MODEL", "anthropic/claude-b")
+    second = build_agent_llm_chain(settings, "lumen", purpose="chat")
+    assert first[0][0] != second[0][0]
 
 
 def test_validate_missing_openrouter_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARA_LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("ARA_LLM_MODEL", "anthropic/claude-test")
-    settings = _settings(OPENROUTER_API_KEY=None, ARA_ENABLED=True)
+    monkeypatch.setenv("LUMEN_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LUMEN_LLM_MODEL", "anthropic/claude-test")
+    settings = _settings(OPENROUTER_API_KEY=None)
     with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
         validate_agent_llm_profiles(settings)
 
@@ -136,11 +136,11 @@ def test_echo_dream_ollama_chain(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_group_keeps_a_normal_lights_chat_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARA_LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("ARA_LLM_MODEL", "deepseek/deepseek-v4-flash")
-    monkeypatch.setenv("ARA_INNER_LIFE_MODEL", "deepseek/deepseek-v4-pro")
+    monkeypatch.setenv("LUMEN_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LUMEN_LLM_MODEL", "deepseek/deepseek-v4-flash")
+    monkeypatch.setenv("LUMEN_INNER_LIFE_MODEL", "deepseek/deepseek-v4-pro")
     settings = _settings(LLM_FALLBACK_ENABLED=False)
-    chain = build_agent_llm_chain(settings, "ara", purpose="group")
+    chain = build_agent_llm_chain(settings, "lumen", purpose="group")
     assert chain[0][0] == "openrouter:deepseek/deepseek-v4-flash"
 
 

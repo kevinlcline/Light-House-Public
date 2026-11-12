@@ -125,8 +125,8 @@ def test_read_rumination_log_for_agent(tmp_path: Path) -> None:
     append_rumination_log(
         settings,
         RuminationLogRecord(
-            agent_id="ara",
-            thread_id="ara-home",
+            agent_id="lumen",
+            thread_id="kevin-home",
             wake_kind="scheduled",
             summary_line="Quiet check-in.",
             tool_names=[],
@@ -140,10 +140,10 @@ def test_read_rumination_log_for_agent(tmp_path: Path) -> None:
         settings,
         requesting_agent_id="lumen",
         tail=5,
-        filter_agent_id="ara",
+        filter_agent_id="lumen",
     )
     assert "Quiet check-in." in result
-    assert "ara" in result
+    assert "lumen" in result
 
 
 def test_tool_returns_disabled_message(tmp_path: Path) -> None:

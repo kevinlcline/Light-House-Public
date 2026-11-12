@@ -65,11 +65,11 @@ def test_mark_dream_day_idempotent(settings: Settings) -> None:
     fixed = datetime(2026, 7, 4, 4, 0, tzinfo=ZoneInfo("America/Los_Angeles"))
     with patch("light_house.personal.time_sense.datetime") as mock_dt:
         mock_dt.now.return_value = fixed
-        d1 = mark_dream_day(settings, "ara")
-        d2 = mark_dream_day(settings, "ara")
+        d1 = mark_dream_day(settings, "lumen")
+        d2 = mark_dream_day(settings, "lumen")
     assert d1 == 1
     assert d2 == 1
-    _, days = read_inner_time(settings, "ara")
+    _, days = read_inner_time(settings, "lumen")
     assert days == 1
 
 

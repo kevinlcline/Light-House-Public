@@ -31,6 +31,7 @@ def _test_settings(tmp_path: Path, **overrides: object) -> Settings:
         "SUBSCRIPTION_AUDIT_ENABLED": True,
         "SUBSCRIPTION_AUDIT_LOG_PATH": str(tmp_path / "subscription_audit.ndjson"),
         "LIGHT_HOUSE_ENV": "production",
+        "WEB_GATE_ENABLED": False,
     }
     base.update(overrides)
     return Settings(**base)
@@ -84,11 +85,11 @@ def test_agent_tool_subscribe(tmp_path: Path) -> None:
     result = execute_personal_tool(
         "unsubscribe_event",
         {"event_type": "peer_message"},
-        agent_id="ara",
+        agent_id="lumen",
         settings=settings,
     )
     assert "SUCCESS" in result
-    store = PersonalStore(settings.personal_db_path / "ara.sqlite")
+    store = PersonalStore(settings.personal_db_path / "lumen.sqlite")
     assert store.is_event_subscribed("peer_message") is False
 
 

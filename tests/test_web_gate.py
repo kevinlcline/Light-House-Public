@@ -271,7 +271,8 @@ def test_logout_clears_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         app.dependency_overrides.clear()
 
 
-def test_settings_reject_gate_without_password() -> None:
+def test_settings_reject_gate_without_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WEB_GATE_PASSWORD", raising=False)
     with pytest.raises(ValueError, match="WEB_GATE_PASSWORD"):
         Settings(
             _env_file=None,
@@ -280,7 +281,8 @@ def test_settings_reject_gate_without_password() -> None:
         )
 
 
-def test_settings_reject_gate_without_secret() -> None:
+def test_settings_reject_gate_without_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WEB_GATE_SESSION_SECRET", raising=False)
     with pytest.raises(ValueError, match="WEB_GATE_SESSION_SECRET"):
         Settings(
             _env_file=None,

@@ -56,6 +56,9 @@ def _settings(tmp_path: Path, **overrides: object) -> Settings:
         "HUMANS_COMMS_PATH": str(tmp_path / "humans" / "comms_allows.json"),
         "HUMANS_TOOLS_PATH": str(tmp_path / "humans" / "user_tools.json"),
         "HOUSE_DAD_USER_ID": "kevin",
+        "GOOGLE_OAUTH_CLIENT_ID": "",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "",
+        "GOOGLE_OAUTH_REDIRECT_URI": "",
     }
     base.update(overrides)
     return Settings(**base)

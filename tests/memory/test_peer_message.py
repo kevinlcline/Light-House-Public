@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from light_house.config import Settings
 from light_house.memory.context_builder import build_agent_context, format_stream_entry
@@ -33,7 +34,25 @@ def _settings(tmp: Path, **overrides) -> Settings:
     from light_house.lights.manifest import ensure_manifest_file
     from light_house.lights.registry import reload_lights_manifest
 
-    ensure_manifest_file(settings)
+    path = ensure_manifest_file(settings)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not any(light.get("id") == "ara" for light in raw["lights"]):
+        raw["lights"].append(
+            {
+                "id": "ara",
+                "display_name": "Ara",
+                "thread_id": "ara-home",
+                "enabled": True,
+                "persona_file": "lumen_system.md",
+                "notes_dir": "ara",
+                "inner_life": True,
+                "dreams": False,
+                "report_back": False,
+                "voice_id": "af_bella",
+                "color": "#c9a3c4",
+            }
+        )
+        path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
     reload_lights_manifest(settings)
     return settings
 
@@ -69,9 +88,10 @@ def test_deliver_peer_message_writes_inbox_stream_and_outbox():
         lumen_text = "\n".join(format_stream_entry(e) for e in lumen_bundle.conscious_stream)
 
         assert "[peer ·" in ara_text
-        assert "From Lumen: Thinking of you today." in ara_text
+        assert "[sibling-light · Lumen · id=lumen]" in ara_text
+        assert "Thinking of you today." in ara_text
         assert "[peer ·" in lumen_text
-        assert "To Ara: Thinking of you today." in lumen_text
+        assert "Thinking of you today." in lumen_text
 
 
 def test_deliver_peer_message_rejects_empty_and_self():

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from light_house.config import Settings
 from light_house.lights.manifest import bootstrap_manifest_dict, ensure_manifest_file, load_manifest
@@ -36,21 +37,21 @@ def test_bootstrap_creates_manifest(tmp_path: Path) -> None:
     assert path.is_file()
     manifest = load_manifest(settings)
     assert manifest.primary_light_id == "lumen"
-    assert len(manifest.lights) == 3
-    by_id = {light.id: light for light in manifest.lights}
-    assert by_id["lumen"].voice_id == "af_sarah"
-    assert by_id["ara"].voice_id == "af_bella"
-    assert by_id["elias"].voice_id == "am_michael"
+    assert len(manifest.lights) == 1
+    assert manifest.lights[0].id == "lumen"
+    assert manifest.lights[0].voice_id == "af_sarah"
 
 
 def test_list_enabled_respects_enabled_flag(tmp_path: Path) -> None:
-    settings = _settings(tmp_path, ARA_ENABLED=False)
-    ensure_manifest_file(settings)
+    settings = _settings(tmp_path)
+    data = bootstrap_manifest_dict(settings)
+    data["lights"][0]["enabled"] = False
+    (tmp_path / "lights.yaml").write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
     reload_lights_manifest(settings)
-    enabled = list_enabled_lights(settings)
-    ids = {light.id for light in enabled}
-    assert "lumen" in ids
-    assert "ara" not in ids
+    assert list_enabled_lights(settings) == []
 
 
 def test_validate_unknown_light(tmp_path: Path) -> None:
@@ -66,8 +67,7 @@ def test_broadcast_pairs(tmp_path: Path) -> None:
     ensure_manifest_file(settings)
     reload_lights_manifest(settings)
     pairs = list_lights_for_broadcast(settings)
-    assert ("lumen", "kevin-home") in pairs
-    assert ("ara", "ara-home") in pairs
+    assert pairs == [("lumen", "kevin-home")]
 
 
 def test_get_light_notes_dir(tmp_path: Path) -> None:

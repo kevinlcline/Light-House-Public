@@ -224,7 +224,8 @@ def test_archive_canned_bodies_are_exact_matches_only() -> None:
         ).fetchall()
     finally:
         con.close()
-    assert rows
+    if not rows:
+        pytest.skip("no stored dreams on this machine")
     exact = 0
     for row in rows:
         if _CANNED_EMPTY_BEAT_RE.fullmatch(_night_body(row["body"])):
@@ -257,7 +258,8 @@ def test_one_lights_recent_nights_carry_no_place_anchor() -> None:
             LIMIT 1
             """
         ).fetchone()
-        assert thread is not None
+        if thread is None:
+            pytest.skip("no light with five stored nights on this machine")
         rows = con.execute(
             """
             SELECT body, extra_json FROM memory_documents

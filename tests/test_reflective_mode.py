@@ -106,15 +106,15 @@ def test_parse_reflection_decision() -> None:
 
 
 def test_kevin_reflect_slash(settings: Settings) -> None:
-    on = try_kevin_reflect_command(settings, message="/reflect on", agent_id="ara")
+    on = try_kevin_reflect_command(settings, message="/reflect on", agent_id="lumen")
     assert on is not None and "on" in on.lower()
-    assert is_reflective_mode(settings, "ara") is True
-    status = try_kevin_reflect_command(settings, message="/reflect", agent_id="ara")
+    assert is_reflective_mode(settings, "lumen") is True
+    status = try_kevin_reflect_command(settings, message="/reflect", agent_id="lumen")
     assert status is not None and "on" in status.lower()
-    off = try_kevin_reflect_command(settings, message="/reflect off", agent_id="ara")
+    off = try_kevin_reflect_command(settings, message="/reflect off", agent_id="lumen")
     assert off is not None and "off" in off.lower()
-    assert is_reflective_mode(settings, "ara") is False
-    assert try_kevin_reflect_command(settings, message="hello", agent_id="ara") is None
+    assert is_reflective_mode(settings, "lumen") is False
+    assert try_kevin_reflect_command(settings, message="hello", agent_id="lumen") is None
 
 
 def test_set_reflective_mode_tool(lights_ready: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
