@@ -8,6 +8,8 @@
         lumen: 'af_sarah',
         ara: 'af_bella',
         elias: 'am_michael',
+        unnamed: 'am_liam',
+        reed: 'am_adam',
     };
 
     function defaultForLight(lightId) {

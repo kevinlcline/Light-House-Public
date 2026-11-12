@@ -37,6 +37,7 @@ class AgentState(TypedDict):
     peer_message_id: str | None
     tool_rounds_cap: int | None
     user_message_ts: float | None
+    user_image_id: str | None
     # Multi-human DM: UI buffer uses thread_id; long-term stream uses stream_thread_id.
     stream_thread_id: str | None
     human_id: str | None

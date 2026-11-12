@@ -22,6 +22,7 @@ class BufferedMessage:
     from_agent_id: str | None = None
     from_human_id: str | None = None
     from_human_display_name: str | None = None
+    image_id: str | None = None
 
 
 class ConversationBuffer:
@@ -70,6 +71,11 @@ class ConversationBuffer:
                 from_human_display_name, str
             ):
                 from_human_display_name = None
+            image_id = item.get("image_id")
+            if not isinstance(image_id, str) or not image_id.strip():
+                image_id = None
+            else:
+                image_id = image_id.strip()
             out.append(
                 BufferedMessage(
                     role=role,
@@ -78,6 +84,7 @@ class ConversationBuffer:
                     from_agent_id=from_agent_id,
                     from_human_id=from_human_id,
                     from_human_display_name=from_human_display_name,
+                    image_id=image_id,
                 )
             )
         out = dedupe_assistant_messages(out)
@@ -100,6 +107,7 @@ class ConversationBuffer:
         user_ts: float | None = None,
         from_human_id: str | None = None,
         from_human_display_name: str | None = None,
+        image_id: str | None = None,
     ) -> None:
         user_text = user_text.strip()
         assistant_text = assistant_text.strip()
@@ -107,6 +115,7 @@ class ConversationBuffer:
             return
         hid = (from_human_id or "").strip().lower() or None
         hname = (from_human_display_name or "").strip() or None
+        picture = (image_id or "").strip() or None
         messages = self.load(thread_id)
         if len(messages) >= 2:
             prev_user, prev_ai = messages[-2], messages[-1]
@@ -124,6 +133,7 @@ class ConversationBuffer:
                     ts=user_time,
                     from_human_id=hid,
                     from_human_display_name=hname,
+                    image_id=picture,
                 )
                 messages[-1] = BufferedMessage(role="assistant", content=assistant_text, ts=now)
                 self.save(thread_id, messages)
@@ -137,6 +147,7 @@ class ConversationBuffer:
                 ts=user_time,
                 from_human_id=hid,
                 from_human_display_name=hname,
+                image_id=picture,
             )
         )
         messages.append(

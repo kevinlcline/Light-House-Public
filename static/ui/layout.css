@@ -8,6 +8,8 @@
     background: var(--bg-bar);
     border-bottom: 1px solid var(--border-subtle);
     flex-shrink: 0;
+    position: relative;
+    z-index: 40;
 }
 
 .top-bar-left {

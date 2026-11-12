@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Literal, TypedDict
+from typing import Any, Callable, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
-from light_house.agents.registry import get_agent, load_persona
+from light_house.agents.registry import build_base_system, get_agent
 from light_house.config import Settings
 from light_house.group_chat.note_tools import run_group_note_tool_rounds
-from light_house.group_chat.prompts import GROUP_CHAT_TASK_HINT, GroupChatDecision
+from light_house.group_chat.prompts import (
+    GROUP_CHAT_TASK_HINT,
+    GroupChatDecision,
+    group_worker_boundary,
+)
 from light_house.group_chat.speaker import (
     format_current_speaker_for_prompt,
     format_presence_for_prompt,
+    tool_human_for_group,
 )
 from light_house.llm.chain import build_agent_llm_chain
 from light_house.memory.context_builder import build_agent_context, format_agent_context_markdown
@@ -27,12 +32,13 @@ SceneEventCallback = Callable[[dict[str, Any]], None]
 
 
 class GroupUtterance(TypedDict):
-    speaker_kind: Literal["human", "light"]
+    speaker_kind: Literal["human", "light", "visitor"]
     speaker_id: str
     display_name: str
     text: str
     beat: int | None
     ts: float
+    image_id: NotRequired[str]
 
 
 class GroupSceneState(TypedDict):
@@ -73,11 +79,45 @@ def parse_speak_order(settings: Settings, enabled_ids: list[str]) -> list[str]:
 def format_transcript_for_prompt(transcript: list[GroupUtterance]) -> str:
     if not transcript:
         return "(nothing said yet this scene)"
+    from light_house.prompt_image import transcript_line
+
     lines: list[str] = []
     for item in transcript:
         name = item["display_name"]
-        lines.append(f"{name}: {item['text']}")
+        lines.append(
+            transcript_line(name, item["text"], image_id=item.get("image_id"))
+        )
     return "\n".join(lines)
+
+
+def recent_transcript(
+    transcript: list[GroupUtterance],
+    *,
+    limit: int,
+) -> tuple[list[GroupUtterance], int]:
+    """Return (shown, omitted). limit <= 0 keeps the whole sitting."""
+    if limit <= 0 or len(transcript) <= limit:
+        return list(transcript), 0
+    return list(transcript[-limit:]), len(transcript) - limit
+
+
+def format_transcript_block(
+    transcript: list[GroupUtterance],
+    *,
+    limit: int,
+    heading: str,
+    recall: bool = True,
+) -> tuple[str, list[GroupUtterance]]:
+    """Prompt section for a short recent stretch of the sitting."""
+    shown, omitted = recent_transcript(transcript, limit=limit)
+    note = ""
+    if omitted:
+        note = f"Showing the last {len(shown)} lines of this sitting. {omitted} earlier lines stay stored."
+        if recall:
+            note += " Use recall_memory when an older line is needed."
+        note += "\n"
+    body = format_transcript_for_prompt(shown)
+    return f"{heading}\n{note}{body}\n\n", shown
 
 
 def _parse_decision(content: str) -> GroupChatDecision:
@@ -123,7 +163,12 @@ def decide_for_light_sequential(
         stream_mode="chat",
     )
     context_md = format_agent_context_markdown(bundle)
-    system = load_persona(agent_id) + context_md + GROUP_CHAT_TASK_HINT
+    system = (
+        build_base_system(agent_id)
+        + context_md
+        + GROUP_CHAT_TASK_HINT
+        + group_worker_boundary(settings, agent_id)
+    )
     short = scene_id.split("-")[0]
     presence = format_presence_for_prompt(present_humans)
     presence_block = f"{presence}\n" if presence else ""
@@ -138,21 +183,27 @@ def decide_for_light_sequential(
         f"{presence_block}"
         f"{speaker_block}"
         f"**{human_display_name}** said:\n{human_message.strip()}\n\n"
-        f"## Transcript so far\n{format_transcript_for_prompt(transcript)}\n\n"
+        f"{format_transcript_block(transcript, limit=settings.group_chat_prompt_lookback, heading='## Transcript so far')[0]}"
         f"Your remaining speak budget this scene: {remaining_budget}.\n"
-        f"Use note tools if you need to look something up, then decide your next action as JSON."
+        f"Use your full house tools if you need to look something up, then decide your next action as JSON."
     )
-    chain = build_agent_llm_chain(settings, agent_id, purpose="chat")
+    chain = build_agent_llm_chain(settings, agent_id, purpose="group")
     try:
         messages: list = [
             SystemMessage(content=system),
             HumanMessage(content=human),
         ]
+        account_id, speaker_id = tool_human_for_group(
+            speaker_id=human_id,
+            present_humans=present_humans,
+        )
         raw = run_group_note_tool_rounds(
             settings=settings,
             llm_chain=chain,
             messages=messages,
             agent_id=agent_id,
+            account_user_id=account_id,
+            speaker_id=speaker_id,
         )
         decision = _parse_decision(raw)
     except Exception:

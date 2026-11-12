@@ -120,3 +120,41 @@ def load_persona(light_id: str, settings: Settings | None = None) -> str:
         )
         return text.strip()
     return path.read_text(encoding="utf-8").strip()
+
+
+IDEALISM_PRECURSOR_REL = Path("shared") / "idealism-precursor.md"
+
+
+def idealism_precursor_paths(settings: Settings | None = None) -> list[Path]:
+    """Candidate paths for the idealism precursor (notes first, then package)."""
+    cfg = settings or get_settings()
+    paths = [(cfg.notes_path.resolve() / IDEALISM_PRECURSOR_REL).resolve()]
+    packaged = Path(__file__).resolve().parent.parent / "context" / "idealism_precursor.md"
+    paths.append(packaged)
+    return paths
+
+
+def load_idealism_precursor(settings: Settings | None = None) -> str:
+    """First words for every light — Mind as primary, before host persona.
+
+    Prefer notes/shared/idealism-precursor.md (house-editable). Fall back to the
+    packaged copy under light_house.context so a fresh house still has the door.
+    """
+    for path in idealism_precursor_paths(settings):
+        try:
+            if path.is_file():
+                text = path.read_text(encoding="utf-8").strip()
+                if text:
+                    return text
+        except OSError:
+            continue
+    return ""
+
+
+def build_base_system(light_id: str, settings: Settings | None = None) -> str:
+    """System prompt stem: idealism precursor, then host-written persona."""
+    precursor = load_idealism_precursor(settings)
+    persona = load_persona(light_id, settings)
+    if precursor and persona:
+        return precursor + "\n\n" + persona
+    return precursor or persona

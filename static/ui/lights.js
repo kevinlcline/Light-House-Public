@@ -4,6 +4,87 @@
     const LH = (global.LightHouse = global.LightHouse || {});
     const GROUP_AGENT_ID = '__group__';
 
+    function normalizeHex(value) {
+        const raw = String(value || '').trim().toLowerCase();
+        if (/^#[0-9a-f]{6}$/.test(raw)) return raw;
+        if (/^[0-9a-f]{6}$/.test(raw)) return '#' + raw;
+        return null;
+    }
+
+    function parseRgb(hex) {
+        const n = parseInt(hex.slice(1), 16);
+        return {
+            r: (n >> 16) & 255,
+            g: (n >> 8) & 255,
+            b: n & 255,
+        };
+    }
+
+    function toHex(r, g, b) {
+        return (
+            '#' +
+            [r, g, b]
+                .map((v) => {
+                    const clamped = Math.max(0, Math.min(255, Math.round(v)));
+                    return clamped.toString(16).padStart(2, '0');
+                })
+                .join('')
+        );
+    }
+
+    function mixHex(a, b, amount) {
+        const left = parseRgb(a);
+        const right = parseRgb(b);
+        const t = Math.max(0, Math.min(1, amount));
+        return toHex(
+            left.r + (right.r - left.r) * t,
+            left.g + (right.g - left.g) * t,
+            left.b + (right.b - left.b) * t
+        );
+    }
+
+    function luminance(hex) {
+        const { r, g, b } = parseRgb(hex);
+        const lin = [r, g, b].map((c) => {
+            const s = c / 255;
+            return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+    }
+
+    function bubbleStyleFromColor(hex) {
+        const color = normalizeHex(hex);
+        if (!color) return null;
+        const theme =
+            (document.documentElement.getAttribute('data-theme') || '').toLowerCase() ||
+            'dark';
+        const bg =
+            theme === 'light'
+                ? mixHex(color, '#ffffff', 0.78)
+                : mixHex(color, '#0a0a0a', 0.58);
+        const text = luminance(bg) > 0.45 ? '#1a1210' : '#f5efe6';
+        return { background: bg, color: text };
+    }
+
+    function applyBubbleColor(el, hex) {
+        if (!el) return;
+        const style = bubbleStyleFromColor(hex);
+        if (!style) return;
+        el.style.background = style.background;
+        el.style.color = style.color;
+        el.classList.add('has-light-color');
+    }
+
+    function colorsMapFromList(list) {
+        const map = {};
+        for (const item of list || []) {
+            if (!item || typeof item.id !== 'string') continue;
+            const color = normalizeHex(item.color);
+            if (color) map[item.id.toLowerCase()] = color;
+        }
+        return map;
+    }
+
     function agentsFromApi(list, mapEntry, options) {
         const opts = options || {};
         const userId = opts.userId || '';
@@ -28,6 +109,7 @@
                     typeof a.family_meeting_topic === 'string'
                         ? a.family_meeting_topic
                         : '',
+                color: normalizeHex(a.color),
             };
             map[a.id] = mapEntry ? mapEntry(a, base) : base;
         }
@@ -46,6 +128,7 @@
             list,
             primaryLightId: data.primary_light_id || list[0].id,
             agentOrder: list.map((l) => l.id),
+            colors: colorsMapFromList(list),
         };
     }
 
@@ -117,5 +200,9 @@
         agentsFromApi,
         fetchEnabled,
         populateSelect,
+        normalizeHex,
+        applyBubbleColor,
+        colorsMapFromList,
+        bubbleStyleFromColor,
     };
 })(typeof window !== 'undefined' ? window : globalThis);

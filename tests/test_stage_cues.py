@@ -5,10 +5,14 @@ from light_house.tts.stage_cues import emotion_from_text, strip_stage_cues
 
 def test_asterisk_smile() -> None:
     assert emotion_from_text("*smiles* Hello there.") == {"pose": "smile"}
+    assert emotion_from_text("*grins playfully* Hello there.") == {"pose": "grin"}
 
 
 def test_parenthetical_laugh() -> None:
-    assert emotion_from_text("Oh no (laughs) okay.") == {"pose": "laugh"}
+    assert emotion_from_text("Oh no (laughs) okay.") == {
+        "pose": "laugh",
+        "hold_ms": "1000",
+    }
 
 
 def test_last_cue_wins() -> None:
@@ -59,7 +63,7 @@ def test_emoji_smile() -> None:
 
 
 def test_emoji_laugh() -> None:
-    assert emotion_from_text("Oh no 😂") == {"pose": "laugh"}
+    assert emotion_from_text("Oh no 😂") == {"pose": "laugh", "hold_ms": "1000"}
 
 
 def test_emoji_sad() -> None:
@@ -72,14 +76,52 @@ def test_emoji_heart() -> None:
 
 def test_emoji_think() -> None:
     assert emotion_from_text("Hmm 🤔") == {"pose": "think"}
+    assert emotion_from_text("*mmm*") == {"pose": "think"}
 
 
 def test_emoji_wink() -> None:
-    assert emotion_from_text("Maybe 😉") == {"pose": "wink"}
+    assert emotion_from_text("Maybe 😉") == {"pose": "wink", "hold_ms": "1000"}
 
 
 def test_emoji_after_asterisk_wins() -> None:
     assert emotion_from_text("*smiles* wait 😢") == {"pose": "sad"}
+
+
+def test_prose_she_softens() -> None:
+    assert emotion_from_text("She softens, a quiet smile in her voice.")["pose"] == "soft"
+
+
+def test_prose_i_smile() -> None:
+    assert emotion_from_text("I smile at that.") == {"pose": "smile"}
+
+
+def test_prose_ara_tilts_head() -> None:
+    assert emotion_from_text("Ara tilts her head. Hello.") == {"gesture": "tilt"}
+
+
+def test_prose_toby_laughs() -> None:
+    assert emotion_from_text("Toby laughs, then lets it go.")["pose"] == "laugh"
+
+
+def test_prose_skips_i_think() -> None:
+    assert emotion_from_text("I think we should wait.") == {}
+
+
+def test_prose_skips_noun_smile_without_action() -> None:
+    assert emotion_from_text("A smile means a lot.") == {}
+    assert emotion_from_text("She said a smile is hard.") == {}
+
+
+def test_prose_not_stripped_from_speech() -> None:
+    text = "She softens, then speaks. Hello."
+    out = strip_stage_cues(text)
+    assert "She softens" in out
+    assert "Hello" in out
+
+
+def test_prose_does_not_double_inside_marked_cue() -> None:
+    # Marked cue still wins cleanly; prose scanner skips inside *...*.
+    assert emotion_from_text("*She smiles* Hello.") == {"pose": "smile"}
 
 
 def test_emoji_nod_keeps_smile() -> None:
@@ -97,7 +139,7 @@ def test_eyes_light_up_with_grin() -> None:
         "a warm grin spreading across her face.*"
     )
     found = emotion_from_text(text)
-    assert found["pose"] == "smile"
+    assert found["pose"] == "grin"
     assert found["overlay"] == "bright"
 
 
@@ -122,24 +164,26 @@ def test_excited() -> None:
 
 
 def test_pause_closed_eyes() -> None:
-    assert emotion_from_text("*pauses*") == {"pose": "pause", "hold_ms": "2000"}
+    assert emotion_from_text("*pauses*") == {"pose": "pause", "hold_ms": "1000"}
     assert emotion_from_text("*Quiet, honest pause.*") == {
         "pose": "pause_smile",
-        "hold_ms": "2000",
+        "hold_ms": "1000",
     }
 
 
 def test_soft_warm_stillness_is_pause_smile() -> None:
     assert emotion_from_text("*Soft, warm stillness.*") == {
         "pose": "pause_smile",
-        "hold_ms": "2000",
+        "hold_ms": "1000",
     }
 
 
-def test_long_full_stillness_holds_longer() -> None:
+def test_closed_eye_poses_reopen_quickly() -> None:
+    assert emotion_from_text("*laughs*") == {"pose": "laugh", "hold_ms": "1000"}
+    assert emotion_from_text("Maybe 😉") == {"pose": "wink", "hold_ms": "1000"}
     assert emotion_from_text("*Long, quiet, full stillness.*") == {
         "pose": "pause_smile",
-        "hold_ms": "4000",
+        "hold_ms": "1000",
     }
 
 
@@ -177,6 +221,27 @@ def test_iter_unmatched_skips_i_think() -> None:
     from light_house.tts.stage_cues import iter_unmatched_signals
 
     assert iter_unmatched_signals("(I think) we wait.") == []
+
+
+def test_signature_emojis_and_clusters_map() -> None:
+    from light_house.tts.stage_cues import emotion_from_text, iter_unmatched_signals
+
+    assert emotion_from_text("🕯️")["pose"] == "soft"
+    assert emotion_from_text("🌙")["pose"] == "soft"
+    assert emotion_from_text("🌱")["pose"] == "soft"
+    assert emotion_from_text("🥰💖")["pose"] == "smile"
+    assert iter_unmatched_signals("🥰💖") == []
+    assert iter_unmatched_signals("🥰🌙💖✨") == []
+    assert iter_unmatched_signals("🌱🕯️") == []
+    assert iter_unmatched_signals("*be* *is* *real*") == []
+    assert any(row["text"] == "🧊" for row in iter_unmatched_signals("hello 🧊"))
+
+
+def test_quiet_warmth_is_soft() -> None:
+    from light_house.tts.stage_cues import classify_cue
+
+    assert classify_cue("Quiet, steady warmth.")["pose"] == "soft"
+    assert classify_cue("Soft, warm stillness as I read.")["pose"] == "pause_smile"
 
 
 def test_face_unmatched_log_roundtrip(tmp_path) -> None:

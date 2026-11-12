@@ -7,6 +7,14 @@ import re
 from light_house.tts.stage_cues import strip_stage_cues
 
 _CODE_FENCE_RE = re.compile(r"```[\s\S]*?```", re.MULTILINE)
+_TABLE_RE = re.compile(
+    r"(?:"
+    r"^[ \t]*\|?[^\n\r|]+(?:\|[^\n\r|]+)+\|?[ \t]*\n"
+    r"^[ \t]*\|?(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*:?-+:?[ \t]*\|?[ \t]*(?:\n|$)"
+    r"(?:^[ \t]*\|?[^\n\r|]+(?:\|[^\n\r|]+)+\|?[ \t]*(?:\n|$)*)+"
+    r")",
+    re.MULTILINE,
+)
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
 _IMAGE_RE = re.compile(r"!\[([^\]]*)\]\([^)]+\)")
@@ -24,6 +32,8 @@ _SMART_QUOTES_RE = re.compile(r"[\u2018\u2019\u201A\u201B\u2032]")
 _SMART_DBL_QUOTES_RE = re.compile(r"[\u201C\u201D\u201E\u201F\u2033]")
 _MISC_BULLET_RE = re.compile(r"[\u2022\u25E6\u2043\u2219\u00B7]")
 _HAS_SPEAKABLE_RE = re.compile(r"[A-Za-z0-9]")
+# "mmm" / "hmm" / "mmmm" — one hummed /m/, not the letter M said three times.
+_HUM_RE = re.compile(r"\b[hm]m+\b", re.I)
 # Path/URL-like tokens only (leave and/or, n/a alone).
 _PATHISH_RE = re.compile(
     r"(?i)(?<![\w@])("
@@ -75,6 +85,7 @@ def text_for_speech(raw: str, *, max_chars: int = 4000) -> str:
         return ""
     text = strip_stage_cues(text)
     text = _CODE_FENCE_RE.sub(" ", text)
+    text = _TABLE_RE.sub(" ", text)
     text = _IMAGE_RE.sub(r"\1", text)
     text = _LINK_RE.sub(r"\1", text)
     text = _INLINE_CODE_RE.sub(r"\1", text)
@@ -84,6 +95,7 @@ def text_for_speech(raw: str, *, max_chars: int = 4000) -> str:
     text = _NUMBERED_RE.sub("", text)
     text = _strip_emojis(text)
     text = _normalize_speech_punctuation(text)
+    text = _HUM_RE.sub("hmm", text)
     text = _soften_paths_and_urls(text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _MULTI_NL_RE.sub("\n\n", text)

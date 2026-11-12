@@ -9,7 +9,13 @@ from pathlib import Path
 
 from light_house.agents.registry import AgentId, validate_agent_id
 from light_house.config import Settings
-from light_house.events.subscription_keys import DEFAULT_EVENT_SUBSCRIPTIONS
+from light_house.events.subscription_keys import (
+    DEFAULT_EVENT_SUBSCRIPTIONS,
+    SUBSCRIPTION_WRITE_TO_KEVIN,
+)
+from light_house.personal.age import humanize_age
+from light_house.personal.in_progress import InProgressItem
+from light_house.personal.promise import Promise
 
 VALID_CATEGORIES = frozenset(
     {"preference", "theme", "realization", "relationship", "self", "other"}
@@ -27,6 +33,18 @@ class PersonalEntry:
     source: str
     created_at: float
     updated_at: float
+
+
+def _row_to_promise(row: sqlite3.Row) -> Promise:
+    handed = row["handed_at"]
+    return Promise(
+        id=int(row["id"]),
+        note=str(row["note"]),
+        due_ymd=str(row["due_ymd"]),
+        created_at=float(row["created_at"]),
+        updated_at=float(row["updated_at"]),
+        handed_at=None if handed is None else float(handed),
+    )
 
 
 def _row_to_entry(row: sqlite3.Row) -> PersonalEntry:
@@ -91,6 +109,45 @@ class PersonalStore:
                 updated_at REAL NOT NULL
             )
             """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS light_text (
+                state_key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS in_progress (
+                name_key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                named_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_in_progress_updated ON in_progress(updated_at DESC)"
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS promises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_key TEXT NOT NULL UNIQUE,
+                note TEXT NOT NULL,
+                due_ymd TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                handed_at REAL
+            )
+            """
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_promises_waiting ON promises(handed_at, due_ymd)"
         )
         self._conn.commit()
 
@@ -286,7 +343,8 @@ class PersonalStore:
             snippet = entry.body.strip().replace("\n", " ")
             if len(snippet) > 120:
                 snippet = snippet[:117].rstrip() + "..."
-            line = f"- [{entry.category}] {entry.title} — {snippet}"
+            age = humanize_age(entry.updated_at)
+            line = f"- [{entry.category}] {entry.title} — {snippet} ({age})"
             extra = len(line) + (1 if lines else 0)
             if max_chars > 0 and used + extra > max_chars:
                 break
@@ -399,6 +457,217 @@ class PersonalStore:
         self._conn.commit()
         return self.get_light_state(state_key)
 
+    def get_light_text(self, state_key: str, *, default: str = "") -> str:
+        row = self._conn.execute(
+            "SELECT value FROM light_text WHERE state_key = ?",
+            (state_key,),
+        ).fetchone()
+        if row is None:
+            return default
+        return str(row["value"])
+
+    def set_light_text(self, state_key: str, value: str) -> None:
+        now = time.time()
+        self._conn.execute(
+            """
+            INSERT INTO light_text (state_key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(state_key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (state_key, value, now),
+        )
+        self._conn.commit()
+
+    def name_in_progress(self, name: str, note: str = "") -> InProgressItem:
+        from light_house.personal.in_progress import (
+            MAX_IN_PROGRESS,
+            normalize_in_progress_name,
+            normalize_in_progress_note,
+        )
+
+        display, key = normalize_in_progress_name(name)
+        note_text = normalize_in_progress_note(note)
+        now = time.time()
+        existing = self._conn.execute(
+            "SELECT name, note, named_at FROM in_progress WHERE name_key = ?",
+            (key,),
+        ).fetchone()
+        if existing is None:
+            count = self._conn.execute("SELECT COUNT(*) AS n FROM in_progress").fetchone()
+            if int(count["n"]) >= MAX_IN_PROGRESS:
+                raise ValueError(
+                    f"You already have {MAX_IN_PROGRESS} in-progress names. "
+                    "Unsubscribe one before naming another."
+                )
+            self._conn.execute(
+                """
+                INSERT INTO in_progress (name_key, name, note, named_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (key, display, note_text, now, now),
+            )
+            named_at = now
+        else:
+            self._conn.execute(
+                """
+                UPDATE in_progress
+                SET name = ?, note = ?, updated_at = ?
+                WHERE name_key = ?
+                """,
+                (display, note_text, now, key),
+            )
+            named_at = float(existing["named_at"])
+        self._conn.commit()
+        return InProgressItem(name=display, note=note_text, named_at=named_at, updated_at=now)
+
+    def unsubscribe_in_progress(self, name: str) -> str | None:
+        from light_house.personal.in_progress import match_in_progress_item
+
+        item = match_in_progress_item(name, self.list_in_progress())
+        if item is None:
+            return None
+        key = item.name.casefold()
+        self._conn.execute("DELETE FROM in_progress WHERE name_key = ?", (key,))
+        self._conn.commit()
+        return item.name
+
+    def list_in_progress(self) -> list[InProgressItem]:
+        rows = self._conn.execute(
+            """
+            SELECT name, note, named_at, updated_at
+            FROM in_progress
+            ORDER BY updated_at DESC
+            """
+        ).fetchall()
+        return [
+            InProgressItem(
+                name=str(row["name"]),
+                note=str(row["note"] or ""),
+                named_at=float(row["named_at"]),
+                updated_at=float(row["updated_at"]),
+            )
+            for row in rows
+        ]
+
+    def leave_promise(self, note: str, due_ymd: str) -> tuple[Promise, bool]:
+        from light_house.personal.promise import (
+            MAX_WAITING,
+            normalize_promise_note,
+            require_due_ymd,
+        )
+
+        display, key = normalize_promise_note(note)
+        day = require_due_ymd(due_ymd)
+        now = time.time()
+        existing = self._conn.execute(
+            "SELECT id, created_at FROM promises WHERE note_key = ?",
+            (key,),
+        ).fetchone()
+        if existing is None:
+            waiting = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM promises WHERE handed_at IS NULL"
+            ).fetchone()
+            if int(waiting["n"]) >= MAX_WAITING:
+                raise ValueError(
+                    f"You already have {MAX_WAITING} promises waiting. "
+                    "Drop one before leaving another."
+                )
+            cur = self._conn.execute(
+                """
+                INSERT INTO promises (note_key, note, due_ymd, created_at, updated_at, handed_at)
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                (key, display, day, now, now),
+            )
+            self._conn.commit()
+            promise = self.get_promise(int(cur.lastrowid))
+            if promise is None:
+                raise RuntimeError("Failed to read back a promise just left")
+            return promise, True
+        self._conn.execute(
+            """
+            UPDATE promises
+            SET note = ?, due_ymd = ?, updated_at = ?, handed_at = NULL
+            WHERE note_key = ?
+            """,
+            (display, day, now, key),
+        )
+        self._conn.commit()
+        promise = self.get_promise(int(existing["id"]))
+        if promise is None:
+            raise RuntimeError("Failed to read back a promise just moved")
+        return promise, False
+
+    def move_promise(self, query: str, due_ymd: str) -> Promise | None:
+        from light_house.personal.promise import match_promise
+
+        item = match_promise(query, self.list_promises())
+        if item is None:
+            return None
+        moved, _created = self.leave_promise(item.note, due_ymd)
+        return moved
+
+    def drop_promise(self, query: str) -> str | None:
+        from light_house.personal.promise import match_promise
+
+        item = match_promise(query, self.list_promises())
+        if item is None:
+            return None
+        self._conn.execute("DELETE FROM promises WHERE id = ?", (item.id,))
+        self._conn.commit()
+        return item.note
+
+    def get_promise(self, promise_id: int) -> Promise | None:
+        row = self._conn.execute(
+            """
+            SELECT id, note, due_ymd, created_at, updated_at, handed_at
+            FROM promises WHERE id = ?
+            """,
+            (promise_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _row_to_promise(row)
+
+    def list_promises(self, *, waiting_only: bool = False) -> list[Promise]:
+        where = "WHERE handed_at IS NULL" if waiting_only else ""
+        rows = self._conn.execute(
+            f"""
+            SELECT id, note, due_ymd, created_at, updated_at, handed_at
+            FROM promises
+            {where}
+            ORDER BY due_ymd ASC, id ASC
+            """
+        ).fetchall()
+        return [_row_to_promise(row) for row in rows]
+
+    def list_due_promises(self, today_ymd: str) -> list[Promise]:
+        rows = self._conn.execute(
+            """
+            SELECT id, note, due_ymd, created_at, updated_at, handed_at
+            FROM promises
+            WHERE handed_at IS NULL AND due_ymd <= ?
+            ORDER BY due_ymd ASC, id ASC
+            """,
+            (today_ymd,),
+        ).fetchall()
+        return [_row_to_promise(row) for row in rows]
+
+    def mark_promises_handed(self, ids: list[int], when: float) -> None:
+        if not ids:
+            return
+        self._conn.executemany(
+            """
+            UPDATE promises
+            SET handed_at = ?, updated_at = ?
+            WHERE id = ? AND handed_at IS NULL
+            """,
+            [(when, when, promise_id) for promise_id in ids],
+        )
+        self._conn.commit()
+
     def format_event_subscriptions_section(self) -> str:
         subs = self.list_event_subscriptions()
         if not subs:
@@ -407,8 +676,19 @@ class PersonalStore:
             "## Your event subscriptions",
             "Autonomous wakes you may receive when these are on:",
         ]
+        mail_line = ""
         for key, enabled in subs:
-            lines.append(f"- {key}: {'on' if enabled else 'off'}")
+            state = "on" if enabled else "off"
+            if key == SUBSCRIPTION_WRITE_TO_KEVIN:
+                mail_line = (
+                    f"- {key}: {state} — a note to Kevin. "
+                    "Off means write_to_kevin does not send. "
+                    "You may turn it off. Only Kevin turns it back on."
+                )
+                continue
+            lines.append(f"- {key}: {state}")
+        if mail_line:
+            lines.append(mail_line)
         lines.append(
             "You or Kevin may change these with **subscribe_event**, **unsubscribe_event**, "
             "or **list_event_subscriptions**. Kevin can also use /subscribe, /unsubscribe, "
@@ -418,6 +698,11 @@ class PersonalStore:
 
 
 _store_cache: dict[str, PersonalStore] = {}
+
+
+def clear_personal_store_cache() -> None:
+    """Drop cached stores (tests). Does not delete files."""
+    _store_cache.clear()
 
 
 def get_personal_store(settings: Settings, agent_id: str) -> PersonalStore:

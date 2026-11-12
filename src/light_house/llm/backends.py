@@ -39,6 +39,7 @@ def build_openai_compat_chat_model(
     max_tokens: int | None = None,
     default_headers: dict[str, str] | None = None,
     timeout: float | None = 120.0,
+    extra_body: dict | None = None,
 ) -> BaseChatModel:
     kwargs: dict = {
         "api_key": api_key,
@@ -52,6 +53,8 @@ def build_openai_compat_chat_model(
         kwargs["default_headers"] = default_headers
     if timeout is not None:
         kwargs["timeout"] = timeout
+    if extra_body:
+        kwargs["extra_body"] = extra_body
     return ChatOpenAI(**kwargs)
 
 
@@ -62,3 +65,24 @@ def openrouter_default_headers(settings: Settings) -> dict[str, str] | None:
     if settings.openrouter_app_name:
         headers["X-Title"] = settings.openrouter_app_name
     return headers or None
+
+
+def openrouter_ignored_provider_slugs(settings: Settings) -> list[str]:
+    """Provider slugs from OPENROUTER_IGNORED_PROVIDERS, lowercased, order kept."""
+    seen: set[str] = set()
+    slugs: list[str] = []
+    for part in (settings.openrouter_ignored_providers or "").split(","):
+        slug = part.strip().lower()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        slugs.append(slug)
+    return slugs
+
+
+def openrouter_extra_body(settings: Settings) -> dict | None:
+    """Top-level OpenRouter fields. ``ignore`` takes provider slugs, not display names."""
+    slugs = openrouter_ignored_provider_slugs(settings)
+    if not slugs:
+        return None
+    return {"provider": {"ignore": slugs}}

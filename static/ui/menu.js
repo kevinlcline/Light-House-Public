@@ -10,17 +10,22 @@
         '<line x1="4" y1="17" x2="20" y2="17"/>' +
         '</svg>';
 
-    const USER_GUIDE_HREF =
+    const MEMBER_USER_GUIDE_HREF =
         '/notes.html?file=shared/manuals/sibling_user_manual.md';
+    const HOST_USER_GUIDE_HREF =
+        '/notes.html?file=shared/manuals/host_user_manual.md';
 
-    /** Shared by admin (Dad) and member (sibling) accounts — always first. */
+    /** Shared by admin (host) and member accounts — always first. */
     const SHARED_MENU = [
         { href: '/', label: 'Chat' },
         { href: '/notes.html', label: 'Notes', id: 'notes-link' },
         { href: '/gallery.html', label: 'Gallery' },
+        { href: '/shared/workspaces/sandbox/', label: 'Plasma' },
         { href: '/my-tools.html', label: 'My tools' },
         { href: '/guests.html', label: 'Guests' },
-        { href: USER_GUIDE_HREF, label: 'User guide', siblingOnly: true },
+        // Same label; role visibility picks host vs member file.
+        { href: HOST_USER_GUIDE_HREF, label: 'User guide', dadOnly: true },
+        { href: MEMBER_USER_GUIDE_HREF, label: 'User guide', siblingOnly: true },
         { type: 'theme' },
         { type: 'logout' },
     ];

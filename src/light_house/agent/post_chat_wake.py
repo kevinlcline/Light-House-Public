@@ -10,6 +10,7 @@ from typing import Any
 from light_house.agent.peer_chat_wake import thread_graph_lock
 from light_house.agent.rumination_internal import rumination_internal_state_defaults
 from light_house.config import Settings
+from light_house.consult.wake import invoke_rumination_graph
 from light_house.inner_life_trace import append_rumination_error
 from light_house.memory.service import MemoryService
 
@@ -146,7 +147,7 @@ async def wake_agent_after_chat(
 
     def _run() -> None:
         with thread_graph_lock(thread_id):
-            g.invoke(state)
+            invoke_rumination_graph(g, state, settings=cfg)
 
     try:
         await asyncio.to_thread(_run)

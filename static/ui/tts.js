@@ -25,11 +25,19 @@
      */
     const speakQueue = [];
     const MAX_SPEAK_QUEUE = 12;
+    /** Auto-speak fingerprints so a duplicate SSE/poll cannot play the same line twice. */
+    const spokenFingerprints = [];
+    const MAX_SPOKEN_FINGERPRINTS = 80;
 
     /** @type {AudioContext|null} */
     let audioCtx = null;
     /** @type {AnalyserNode|null} */
     let analyser = null;
+    let audioUnlocked = false;
+    let unlockArmed = false;
+    // 0.01s of silence — unlocks HTMLAudioElement play() after a user gesture.
+    const SILENT_WAV =
+        'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
     /** @type {WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>} */
     const mediaSources = new WeakMap();
     let lipRaf = 0;
@@ -82,6 +90,53 @@
         return analyser;
     }
 
+    function isAutoplayBlocked(err) {
+        if (!err) return false;
+        const name = String(err.name || '');
+        const msg = String(err.message || err);
+        return name === 'NotAllowedError' || /not allowed|user didn't interact|user gesture/i.test(msg);
+    }
+
+    function unlockAudio() {
+        ensureAnalyser();
+        try {
+            const silent = new Audio(SILENT_WAV);
+            silent.volume = 0;
+            const played = silent.play();
+            if (played && typeof played.then === 'function') {
+                played
+                    .then(() => {
+                        try {
+                            silent.pause();
+                        } catch {
+                            /* ignore */
+                        }
+                        audioUnlocked = true;
+                    })
+                    .catch(() => {});
+            } else {
+                audioUnlocked = true;
+            }
+        } catch {
+            /* ignore */
+        }
+        return audioUnlocked;
+    }
+
+    function armAudioUnlock() {
+        if (unlockArmed || typeof document === 'undefined') return;
+        unlockArmed = true;
+        const once = () => {
+            unlockAudio();
+            document.removeEventListener('pointerdown', once, true);
+            document.removeEventListener('keydown', once, true);
+        };
+        document.addEventListener('pointerdown', once, true);
+        document.addEventListener('keydown', once, true);
+    }
+
+    armAudioUnlock();
+
     function connectLipSyncSource(audio) {
         const node = ensureAnalyser();
         if (!node || !audioCtx || !audio) return false;
@@ -128,8 +183,9 @@
                 sum += v * v;
             }
             const rms = Math.sqrt(sum / data.length);
-            // Quiet floor → open mouth on speech peaks (Kokoro WAV is fairly hot).
-            const raw = Math.min(1, Math.max(0, (rms - 0.018) / 0.22));
+            // Quiet floor → open mouth on speech peaks. Divisor leaves headroom
+            // so hot Kokoro clips don't pin every syllable at max.
+            const raw = Math.min(1, Math.max(0, (rms - 0.016) / 0.30));
             lipSmooth = lipSmooth * 0.5 + raw * 0.5;
             const faces = facesApi();
             if (faces && typeof faces.setMouthOpen === 'function') {
@@ -253,7 +309,25 @@
             }
             if (rest) chunks.push(rest);
         }
-        return chunks.filter(Boolean);
+        return chunks.filter(function (chunk) {
+            return Boolean(chunk) && chunkHasSpeakableText(chunk);
+        });
+    }
+
+    /** Drop *stage sentences* / emoji-only clips so they do not abort the rest. */
+    function chunkHasSpeakableText(text) {
+        let leftover = String(text || '');
+        leftover = leftover.replace(/\*([^*]{1,160})\*|_([^_]{1,80})_|\(([^)]{1,40})\)/g, ' ');
+        leftover = leftover.replace(
+            /[\u2010-\u2015\u2212\u2026\u2018\u2019\u201C\u201D\u2022]/g,
+            ' '
+        );
+        try {
+            leftover = leftover.replace(/\p{Extended_Pictographic}/gu, ' ');
+        } catch {
+            leftover = leftover.replace(/[\u2600-\u27BF]/g, ' ');
+        }
+        return /[A-Za-z0-9]/.test(leftover);
     }
 
     async function refreshServerStatus() {
@@ -290,11 +364,19 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
+        if (res.status === 204) return null;
         if (!res.ok) {
             const detail = (await res.json().catch(() => ({}))).detail;
+            if (/nothing to speak/i.test(String(detail || ''))) return null;
             throw new Error(detail || `TTS HTTP ${res.status}`);
         }
         return res.blob();
+    }
+
+    function prepareSpeechBlob(text, agentId, voice) {
+        return fetchSpeechBlob(text, agentId, voice).then((blob) =>
+            blob ? prepareAudio(blob) : null
+        );
     }
 
     function prepareAudio(blob) {
@@ -398,24 +480,40 @@
                 if (typeof canHandoff !== 'function' || !canHandoff()) return;
                 if (!dur || Number.isNaN(dur)) return;
                 if (audio.currentTime >= Math.max(0, dur - CHUNK_HANDOFF_SEC)) {
-                    finish(false);
+                    try {
+                        audio.pause();
+                    } catch {
+                        /* ignore */
+                    }
+                    finish(true);
                 }
             };
 
             currentAudio = audio;
             liveAudios.add(audio);
+            // Bind Web Audio before play() so the element does not also
+            // emit through the default device (a doubled / echoing voice).
+            connectLipSyncSource(audio);
             audio.addEventListener('playing', onPlaying);
             audio.addEventListener('timeupdate', onTime);
             audio.addEventListener('ended', onEnded);
             audio.addEventListener('error', onEnded);
-            const playResult = audio.play();
-            if (playResult && typeof playResult.catch === 'function') {
-                playResult.catch((err) => {
-                    console.warn('TTS play failed:', err);
-                    liveAudios.delete(audio);
-                    finish(true);
-                });
-            }
+            const tryPlay = (retried) => {
+                const playResult = audio.play();
+                if (playResult && typeof playResult.catch === 'function') {
+                    playResult.catch((err) => {
+                        if (!retried && isAutoplayBlocked(err)) {
+                            unlockAudio();
+                            tryPlay(true);
+                            return;
+                        }
+                        console.warn('TTS play failed:', err);
+                        liveAudios.delete(audio);
+                        finish(true);
+                    });
+                }
+            };
+            tryPlay(false);
         });
     }
 
@@ -425,7 +523,7 @@
         const body = (text || '').trim();
         if (!body) return;
         if (!serverReady) {
-            // Still show face emotes even if TTS server is down.
+            // Still show the ball for a cue even if TTS server is down.
             const faces = facesApi();
             if (faces && typeof faces.emoteFromText === 'function') {
                 faces.emoteFromText(agentId || 'lumen', body, {
@@ -446,27 +544,42 @@
             return;
         }
 
+        if (!force) {
+            const fingerprint = String(agentId || 'lumen') + '|' + body.slice(0, 160);
+            if (spokenFingerprints.indexOf(fingerprint) !== -1) {
+                return;
+            }
+            spokenFingerprints.push(fingerprint);
+            if (spokenFingerprints.length > MAX_SPOKEN_FINGERPRINTS) {
+                spokenFingerprints.shift();
+            }
+        }
+
         const job = {
             text: body,
             agentId: agentId || 'lumen',
             options: opts,
         };
-
+        job.finished = new Promise((resolve) => {
+            job.settle = resolve;
+        });
         // Manual replay / explicit interrupt: drop the queue and cut in.
         if (force) {
             speakQueue.length = 0;
-            return runSpeakJob(job, { interrupt: true });
+            runSpeakJob(job, { interrupt: true });
+            return job.finished;
         }
-
         // Auto-speak (group): finish the current light before starting the next.
+        // Return a promise so Group can release the floor when this line is done.
         if (speakBusy) {
             if (speakQueue.length >= MAX_SPEAK_QUEUE) {
                 speakQueue.shift();
             }
             speakQueue.push(job);
-            return;
+            return job.finished;
         }
-        return runSpeakJob(job, { interrupt: false });
+        runSpeakJob(job, { interrupt: false });
+        return job.finished;
     }
 
     /**
@@ -486,7 +599,15 @@
         }
 
         const chunks = splitIntoSpeechChunks(body);
+        const settle = () => {
+            if (typeof job.settle === 'function') {
+                const done = job.settle;
+                job.settle = null;
+                done();
+            }
+        };
         if (!chunks.length) {
+            settle();
             pumpSpeakQueue();
             return;
         }
@@ -520,12 +641,7 @@
         const voice = opts.voice || null;
 
         let nextPrepared = null;
-        let nextPreparedPromise = fetchSpeechBlob(chunks[0], agentId, voice)
-            .then(prepareAudio)
-            .then((prepared) => {
-                nextPrepared = prepared;
-                return prepared;
-            });
+        let nextPreparedPromise = prepareSpeechBlob(chunks[0], agentId, voice);
         try {
             for (let i = 0; i < chunks.length; i += 1) {
                 if (seq !== speakSeq) return;
@@ -542,17 +658,17 @@
                 const hasNext = i + 1 < chunks.length;
                 nextPrepared = null;
                 if (hasNext) {
-                    nextPreparedPromise = fetchSpeechBlob(
+                    nextPreparedPromise = prepareSpeechBlob(
                         chunks[i + 1],
                         agentId,
                         voice
-                    )
-                        .then(prepareAudio)
-                        .then((p) => {
-                            nextPrepared = p;
-                            return p;
-                        });
+                    ).then((p) => {
+                        nextPrepared = p;
+                        return p;
+                    });
                 }
+
+                if (!prepared) continue;
 
                 await playPrepared(prepared, seq, {
                     canHandoff: hasNext ? () => nextPrepared != null : null,
@@ -562,6 +678,7 @@
             }
             if (seq === speakSeq) clearSpeakingUi();
         } finally {
+            settle();
             // Only the job that still owns speakSeq may clear busy / pump.
             // An interrupted job must not clobber a newer force/stop owner.
             if (seq === speakSeq) {
@@ -628,6 +745,7 @@
             btn.addEventListener('click', (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
+                unlockAudio();
                 replay(
                     body,
                     btn.dataset.agentId || agentId || 'lumen',
@@ -658,6 +776,7 @@
         toggle.removeAttribute('hidden');
         syncToggleLabels();
         toggle.addEventListener('click', () => {
+            unlockAudio();
             setVoiceOn(!isVoiceOn());
         });
         refreshServerStatus();
@@ -674,6 +793,7 @@
         stop,
         speak,
         speakAgent,
+        unlockAudio,
         replay,
         attachSpeakControl,
         splitIntoSpeechChunks,

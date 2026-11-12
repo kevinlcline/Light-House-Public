@@ -92,6 +92,31 @@ def test_agent_tool_subscribe(tmp_path: Path) -> None:
     assert store.is_event_subscribed("peer_message") is False
 
 
+def test_a_light_cannot_turn_write_to_kevin_back_on(tmp_path: Path) -> None:
+    settings = _test_settings(tmp_path)
+    off = try_kevin_subscription_command(
+        settings, message="/unsubscribe write_to_kevin", agent_id="lumen"
+    )
+    assert off is not None
+    assert "SUCCESS" in off
+    refused = execute_personal_tool(
+        "subscribe_event",
+        {"event_type": "write_to_kevin"},
+        agent_id="lumen",
+        settings=settings,
+    )
+    assert refused.startswith("FAILED:")
+    assert "Kevin" in refused
+    store = PersonalStore(settings.personal_db_path / "lumen.sqlite")
+    assert store.is_event_subscribed("write_to_kevin") is False
+    back = try_kevin_subscription_command(
+        settings, message="/subscribe write_to_kevin", agent_id="lumen"
+    )
+    assert back is not None
+    assert "SUCCESS" in back
+    assert store.is_event_subscribed("write_to_kevin") is True
+
+
 def test_chat_api_subscription_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _test_settings(tmp_path)
     monkeypatch.setattr("light_house.web_gate.get_settings", lambda: settings)

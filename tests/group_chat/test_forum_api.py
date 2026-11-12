@@ -28,6 +28,8 @@ def _settings(tmp_path: Path) -> Settings:
         PERSONAL_DB_PATH=str(tmp_path / "personal"),
         GROUP_CHAT_ENABLED=True,
         GROUP_CHAT_HISTORY_PATH=str(tmp_path / "group_chat/rounds.ndjson"),
+        GROUP_VISITOR_PATH=str(tmp_path / "group_chat/visitor.json"),
+        OPENROUTER_API_KEY="test-openrouter-key",
         WEB_GATE_ENABLED=True,
         WEB_GATE_PASSWORD="dad-house-code",
         WEB_GATE_SESSION_SECRET="test-session-secret",

@@ -217,6 +217,8 @@ def build_inner_life_context_preview(
         GARDEN_SYSTEM_HINT,
         NOTES_SYSTEM_HINT,
         PERSONAL_DB_HINT,
+        IN_PROGRESS_HINT,
+        PROMISE_HINT,
         WEB_SYSTEM_HINT,
         format_peer_message_hint,
     )
@@ -243,6 +245,8 @@ def build_inner_life_context_preview(
         + GARDEN_SYSTEM_HINT
         + GARDEN_RUMINATION_HINT
         + PERSONAL_DB_HINT
+        + IN_PROGRESS_HINT
+        + PROMISE_HINT
         + CODEBASE_SYSTEM_HINT
         + WEB_SYSTEM_HINT
         + format_peer_message_hint(peer_agent_ids=peer_agent_ids)

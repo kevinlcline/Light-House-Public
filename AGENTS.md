@@ -54,6 +54,7 @@ Open `http://127.0.0.1:8000` → landing → login with the gate password → **
 - Assume xAI/Ollama are available on Railway.
 - Steer them onto free/small models “to save money.” That produces a flop, not a house.
 - Enable Reed/mailbox workflows — they are private-house only, not this public template.
+- Enable Group visitor seat — private-house only, not this public template.
 
 ## Verify
 

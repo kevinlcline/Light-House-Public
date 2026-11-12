@@ -107,12 +107,59 @@ class SemanticRecallIndex:
             )
         return hits
 
+    def _indexed_ids(self, ids: list[str]) -> set[str]:
+        """Ids already stored. On a lookup failure, treat every id as present.
+
+        A failed lookup must not fall through into a full re-embed. That
+        re-embed is what held a group turn for minutes.
+        """
+        found: set[str] = set()
+        step = 200
+        for start in range(0, len(ids), step):
+            batch = ids[start : start + step]
+            try:
+                result = self._collection.get(ids=batch, include=["metadatas"])
+            except Exception:
+                logger.exception(
+                    "Recall index lookup failed; not re-embedding (%d ids)",
+                    len(ids),
+                )
+                return set(ids)
+            found.update(str(doc_id) for doc_id in (result.get("ids") or []))
+        return found
+
     def backfill_thread(self, store: FileMemoryStore, *, thread_id: str) -> int:
-        """Index all corpus docs for a thread (idempotent upsert)."""
-        count = 0
-        for hit in store.list_thread_corpus(thread_id=thread_id):
-            if not hit.doc_id:
+        """Index corpus docs that are not in the recall index yet.
+
+        Returns how many new docs were written. Docs already stored are left
+        alone. Re-upserting a whole thread re-embeds every body and blocked
+        the group floor for minutes.
+        """
+        hits = [
+            hit
+            for hit in store.list_thread_corpus(thread_id=thread_id)
+            if hit.doc_id
+        ]
+        if not hits:
+            return 0
+        already = self._indexed_ids([str(hit.doc_id) for hit in hits])
+        added = 0
+        for hit in hits:
+            if str(hit.doc_id) in already:
                 continue
-            self.upsert(doc_id=hit.doc_id, text=hit.text, metadata=hit.metadata)
-            count += 1
-        return count
+            self.upsert(doc_id=str(hit.doc_id), text=hit.text, metadata=hit.metadata)
+            added += 1
+        if added:
+            logger.info(
+                "Recall backfill thread_id=%s indexed %d new (%d already present)",
+                thread_id,
+                added,
+                len(already),
+            )
+        else:
+            logger.info(
+                "Recall backfill thread_id=%s already indexed (%d)",
+                thread_id,
+                len(already),
+            )
+        return added

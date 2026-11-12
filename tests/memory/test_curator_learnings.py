@@ -87,9 +87,105 @@ def test_append_learning_note_appends_without_consolidation_when_summarize_disab
         report=report,
     )
 
-    body = (notes_dir / "learnings.md").read_text(encoding="utf-8")
-    assert "Existing insight" in body
-    assert "genuinely new insight" in body
+    kept = (notes_dir / "learnings.md").read_text(encoding="utf-8")
+    assert kept == existing
+    inbox = (notes_dir / "learnings.inbox.md").read_text(encoding="utf-8")
+    assert inbox.startswith("# Learnings inbox")
+    assert "genuinely new insight" in inbox
+    assert "Existing insight" not in inbox
     assert report.notes_summarized == 0
     assert report.notes_appended == 1
+    mock_model.invoke.assert_not_called()
+
+
+def test_append_learning_note_leaves_an_oversized_learnings_file_untouched(
+    curator_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    curator_settings = curator_settings.model_copy(
+        update={
+            "memory_learnings_summarize_enabled": False,
+            "notes_max_chars_per_write": 1_000,
+        }
+    )
+    notes_dir = tmp_path / "notes" / "lumen" / "memory"
+    notes_dir.mkdir(parents=True)
+    original = "# Learnings\n\n" + ("kept morning. " * 400)
+    (notes_dir / "learnings.md").write_text(original, encoding="utf-8")
+    assert len(original) > curator_settings.notes_max_chars_per_write
+
+    monkeypatch.setattr(
+        "light_house.memory.curator.build_curator_chat_model",
+        lambda _settings: MagicMock(),
+    )
+    memory = MemoryService(curator_settings)
+    curator = MemoryCurator(settings=curator_settings, memory=memory)
+    report = CuratorReport(thread_id="kevin-home")
+    curator._append_learning_note(
+        thread_id="kevin-home",
+        paragraph="Inbox only.",
+        report=report,
+    )
+
+    assert (notes_dir / "learnings.md").read_text(encoding="utf-8") == original
+    inbox = (notes_dir / "learnings.inbox.md").read_text(encoding="utf-8")
+    assert "Inbox only." in inbox
+    assert report.notes_appended == 1
+
+
+def test_append_learning_note_second_pass_keeps_the_first_inbox_line(
+    curator_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    curator_settings = curator_settings.model_copy(
+        update={"memory_learnings_summarize_enabled": False}
+    )
+    notes_dir = tmp_path / "notes" / "lumen" / "memory"
+    notes_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        "light_house.memory.curator.build_curator_chat_model",
+        lambda _settings: MagicMock(),
+    )
+    memory = MemoryService(curator_settings)
+    curator = MemoryCurator(settings=curator_settings, memory=memory)
+    first = CuratorReport(thread_id="kevin-home")
+    second = CuratorReport(thread_id="kevin-home")
+    curator._append_learning_note(
+        thread_id="kevin-home", paragraph="First insight.", report=first
+    )
+    curator._append_learning_note(
+        thread_id="kevin-home", paragraph="Second insight.", report=second
+    )
+    inbox = (notes_dir / "learnings.inbox.md").read_text(encoding="utf-8")
+    assert "First insight." in inbox
+    assert "Second insight." in inbox
+    assert not (notes_dir / "learnings.md").exists()
+
+
+def test_consolidate_skips_a_partial_read(
+    curator_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    curator_settings = curator_settings.model_copy(
+        update={"notes_max_chars_per_write": 200}
+    )
+    notes_dir = tmp_path / "notes" / "lumen" / "memory"
+    notes_dir.mkdir(parents=True)
+    original = "# Learnings\n\n" + ("tail that must survive. " * 40)
+    (notes_dir / "learnings.md").write_text(original, encoding="utf-8")
+    mock_model = MagicMock()
+    mock_model.invoke.return_value = AIMessage(content="# Learnings\n\n## Gone\n")
+    monkeypatch.setattr(
+        "light_house.memory.curator.build_curator_chat_model",
+        lambda _settings: mock_model,
+    )
+    memory = MemoryService(curator_settings)
+    curator = MemoryCurator(settings=curator_settings, memory=memory)
+    report = CuratorReport(thread_id="kevin-home")
+    curator._maybe_consolidate_learnings(thread_id="kevin-home", report=report)
+    assert (notes_dir / "learnings.md").read_text(encoding="utf-8") == original
+    assert report.notes_summarized == 0
     mock_model.invoke.assert_not_called()

@@ -13,9 +13,11 @@ from light_house.config import LLMProvider, Settings
 from light_house.env_admin import EnvAdminError, merge_env_keys
 from light_house.lights.manifest import (
     LightEntry,
+    default_color_for_light,
     ensure_manifest_file,
     light_entry_to_dict,
     manifest_to_dict,
+    normalize_light_color,
     parse_manifest_dict,
     write_manifest_dict,
     _parse_light,
@@ -189,6 +191,7 @@ def create_light(
     dreams: bool = True,
     report_back: bool = False,
     voice_id: str | None = None,
+    color: str | None = None,
     persona_content: str | None = None,
     set_primary: bool = False,
     llm_provider: str | None = None,
@@ -205,6 +208,14 @@ def create_light(
 
     from light_house.tts.voices_catalog import default_voice_for_light, normalize_voice_id
 
+    try:
+        color_norm = normalize_light_color(
+            color if color is not None else default_color_for_light(light_id),
+            required=True,
+        )
+    except ValueError as exc:
+        raise LightsAdminError(str(exc)) from exc
+
     entry = {
         "id": light_id,
         "display_name": display_name,
@@ -219,6 +230,7 @@ def create_light(
             voice_id or default_voice_for_light(light_id),
             light_id=light_id,
         ),
+        "color": color_norm,
     }
     stub = persona_content if persona_content is not None else persona_stub(display_name)
     light_entry = _parse_light(entry, settings=settings)
@@ -257,6 +269,7 @@ def update_light(
     dreams: bool | None = None,
     report_back: bool | None = None,
     voice_id: str | None = None,
+    color: str | None = None,
     set_primary: bool | None = None,
 ) -> dict:
     raw = _read_raw_manifest(settings)
@@ -284,6 +297,11 @@ def update_light(
             from light_house.tts.voices_catalog import normalize_voice_id
 
             item["voice_id"] = normalize_voice_id(voice_id, light_id=light_id)
+        if color is not None:
+            try:
+                item["color"] = normalize_light_color(color, required=True)
+            except ValueError as exc:
+                raise LightsAdminError(str(exc)) from exc
         break
     if not found:
         raise LightsAdminError(f"Unknown light id: {light_id}")

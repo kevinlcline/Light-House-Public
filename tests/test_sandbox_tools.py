@@ -200,6 +200,50 @@ def test_sandbox_delete_file_and_empty_dir(sandbox_tree: Path) -> None:
     assert removed.startswith("SUCCESS:")
 
 
+def test_sandbox_read_offset_continues_past_the_window(sandbox_tree: Path) -> None:
+    settings = _settings()
+    body = ("A" * 8_000) + "TAIL-MARK" + ("B" * 100)
+    path = sandbox_tree / "shared" / "workspaces" / "sandbox" / "long.html"
+    path.write_text(body, encoding="utf-8")
+
+    first = st.execute_sandbox_tool(
+        "sandbox_read",
+        {"path": "long.html", "space": "playpen"},
+        agent_id="elias",
+        settings=settings,
+    )
+    assert first.startswith("SUCCESS:")
+    assert "characters 0-8000 of 8109" in first
+    assert "offset=8000" in first
+    assert "TAIL-MARK" not in first
+
+    second = st.execute_sandbox_tool(
+        "sandbox_read",
+        {"path": "long.html", "space": "playpen", "offset": 8000},
+        agent_id="elias",
+        settings=settings,
+    )
+    assert "TAIL-MARK" in second
+    assert "characters 8000-8109 of 8109" in second
+
+    past = st.execute_sandbox_tool(
+        "sandbox_read",
+        {"path": "long.html", "space": "playpen", "offset": 99999},
+        agent_id="elias",
+        settings=settings,
+    )
+    assert "empty at offset 99999" in past
+    assert "total 8109 characters" in past
+
+
+def test_sandbox_read_schema_has_offset() -> None:
+    from light_house.tools.light_tools import sandbox_read
+
+    fields = sandbox_read.args_schema.model_fields
+    assert "offset" in fields
+    assert fields["offset"].default == 0
+
+
 def test_execute_tool_call_wiring(sandbox_tree: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from light_house.tools.light_tools import execute_tool_call
 

@@ -80,7 +80,7 @@ def format_sibling_light_utterance(
 
 
 SPEAKER_LEGEND = (
-    "Speaker tags: **[human · Name · dad|sibling · id=…]** is a human in the house; "
-    "**[sibling-light · Name · id=…]** is another Light (not Kevin, not a human). "
+    "Speaker tags: **[human · Name · dad|sibling · id=…]** is a biological human in the house; "
+    "**[sibling-light · Name · id=…]** is another Light (a digital human, not a biological human). "
     "Never treat a sibling-light line as Kevin speaking."
 )

@@ -12,11 +12,15 @@ from typing import Any, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from light_house.agents.registry import get_agent, load_persona
+from light_house.agents.registry import build_base_system, get_agent
 from light_house.config import Settings
 from light_house.group_chat.history import append_group_round
 from light_house.group_chat.note_tools import run_group_note_tool_rounds
-from light_house.group_chat.prompts import GROUP_CHAT_PARALLEL_HINT, GroupChatDecision
+from light_house.group_chat.prompts import (
+    GROUP_CHAT_PARALLEL_HINT,
+    GroupChatDecision,
+    group_worker_boundary,
+)
 from light_house.group_chat.scene import (
     _parse_decision,
     build_group_scene_graph,
@@ -26,6 +30,7 @@ from light_house.group_chat.scene import (
 from light_house.group_chat.speaker import (
     format_current_speaker_for_prompt,
     format_presence_for_prompt,
+    tool_human_for_group,
 )
 from light_house.lights.registry import list_enabled_lights
 from light_house.humans.comms import light_allows_human
@@ -74,7 +79,12 @@ def decide_for_light(
         stream_mode="chat",
     )
     context_md = format_agent_context_markdown(bundle)
-    system = load_persona(agent_id) + context_md + GROUP_CHAT_PARALLEL_HINT
+    system = (
+        build_base_system(agent_id)
+        + context_md
+        + GROUP_CHAT_PARALLEL_HINT
+        + group_worker_boundary(settings, agent_id)
+    )
     presence = format_presence_for_prompt(present_humans)
     presence_block = f"{presence}\n" if presence else ""
     speaker = format_current_speaker_for_prompt(
@@ -88,19 +98,25 @@ def decide_for_light(
         f"{presence_block}"
         f"{speaker_block}"
         f"**{human_display_name}** said:\n{kevin_message.strip()}\n\n"
-        "Use note tools if you need to look something up, then decide as JSON."
+        "Use your full house tools if you need to look something up, then decide as JSON."
     )
-    chain = build_agent_llm_chain(settings, agent_id, purpose="chat")
+    chain = build_agent_llm_chain(settings, agent_id, purpose="group")
     try:
         messages: list = [
             SystemMessage(content=system),
             HumanMessage(content=human),
         ]
+        account_id, speaker_id = tool_human_for_group(
+            speaker_id=human_id,
+            present_humans=present_humans,
+        )
         raw = run_group_note_tool_rounds(
             settings=settings,
             llm_chain=chain,
             messages=messages,
             agent_id=agent_id,
+            account_user_id=account_id,
+            speaker_id=speaker_id,
         )
         decision = _parse_decision(raw)
     except Exception:

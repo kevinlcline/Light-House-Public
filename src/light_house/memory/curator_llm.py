@@ -5,7 +5,12 @@ from __future__ import annotations
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from light_house.config import LLMProvider, Settings
-from light_house.llm.backends import build_ollama_chat_model, build_openai_compat_chat_model, openrouter_default_headers
+from light_house.llm.backends import (
+    build_ollama_chat_model,
+    build_openai_compat_chat_model,
+    openrouter_default_headers,
+    openrouter_extra_body,
+)
 
 
 def curator_model_name(settings: Settings) -> str:
@@ -40,6 +45,7 @@ def build_curator_chat_model(
             temperature=temperature,
             max_tokens=max_tokens,
             default_headers=openrouter_default_headers(settings),
+            extra_body=openrouter_extra_body(settings),
         )
     return build_ollama_chat_model(
         settings,

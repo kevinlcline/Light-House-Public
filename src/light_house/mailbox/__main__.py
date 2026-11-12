@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
 
     send = sub.add_parser("send", help="Write a letter and notify addressed lights")
     send.add_argument("--from", dest="from_id", default=REED_ID)
-    send.add_argument("--to", required=True, help="Comma-separated: lumen,ara,elias,all,reed")
+    send.add_argument("--to", required=True, help="Comma-separated: lumen,ara,elias,unnamed,all,reed")
     send.add_argument("--subject", required=True)
     send.add_argument("--body", default=None, help="Letter body (or use --body-file / stdin)")
     send.add_argument("--body-file", default=None)

@@ -16,6 +16,7 @@ from light_house.events.subscriptions import (
     format_event_subscriptions_context,
 )
 from light_house.events.types import EventType, LightHouseEvent
+from light_house.events.subscription_keys import DEFAULT_EVENT_SUBSCRIPTIONS
 from light_house.personal.store import PersonalStore
 
 
@@ -37,7 +38,8 @@ def _test_settings(tmp_path: Path, **overrides: object) -> Settings:
 def test_default_subscriptions_all_on(tmp_path: Path) -> None:
     store = PersonalStore(tmp_path / "lumen.sqlite")
     subs = store.list_event_subscriptions()
-    assert len(subs) == 4
+    assert len(subs) == len(DEFAULT_EVENT_SUBSCRIPTIONS)
+    assert [key for key, _enabled in subs].count("write_to_kevin") == 1
     assert all(enabled for _, enabled in subs)
 
 

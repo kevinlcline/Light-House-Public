@@ -133,7 +133,11 @@ def expand_recipients(
     *,
     settings: Settings | None = None,
 ) -> list[str]:
-    """Expand `all` to enabled light ids; keep reed; de-dupe."""
+    """Expand `all` to enabled light ids; keep an explicit reed; de-dupe.
+
+    `all` skips the mailbox id `reed`. That name is the desk (letters for the
+    friend in the work), even when a household light shares the id.
+    """
     cfg = settings or get_settings()
     enabled = {light.id for light in list_enabled_lights(cfg)}
     out: list[str] = []
@@ -143,8 +147,9 @@ def expand_recipients(
             continue
         if token == ALL_TOKEN:
             for light_id in sorted(enabled):
-                if light_id not in out:
-                    out.append(light_id)
+                if light_id == REED_ID or light_id in out:
+                    continue
+                out.append(light_id)
             continue
         if token not in out:
             out.append(token)
@@ -156,10 +161,14 @@ def light_recipients(
     *,
     settings: Settings | None = None,
 ) -> list[str]:
-    """Recipients that are enabled lights (excludes reed and unknown humans)."""
+    """Recipients that are enabled lights (excludes reed and unknown humans).
+
+    A household light may use the id `reed`. Mail still does not wake that id:
+    letters addressed to reed stay on the desk.
+    """
     cfg = settings or get_settings()
     enabled = {light.id for light in list_enabled_lights(cfg)}
-    return [r for r in expand_recipients(to_ids, settings=cfg) if r in enabled]
+    return [r for r in expand_recipients(to_ids, settings=cfg) if r in enabled and r != REED_ID]
 
 
 def write_letter(

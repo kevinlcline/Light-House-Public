@@ -9,6 +9,7 @@ from light_house.humans.identity import (
     is_dad,
     require_dad,
     resolve_password_to_human,
+    session_human_for_user_id,
 )
 from light_house.humans.store import (
     HumansError,
@@ -49,6 +50,7 @@ __all__ = [
     "purge_allows_for_human",
     "require_dad",
     "resolve_password_to_human",
+    "session_human_for_user_id",
     "set_dad_voice_id",
     "set_light_allows_human",
     "update_human",

@@ -15,6 +15,7 @@ from light_house.personal.reflective_mode import (
     is_reflective_mode,
     log_intentional_silence,
     parse_reflection_decision,
+    read_reflective_mode,
     set_reflective_mode,
     should_reflect_this_turn,
     silence_log_path,
@@ -125,6 +126,45 @@ def test_set_reflective_mode_tool(lights_ready: Settings, monkeypatch: pytest.Mo
     out = execute_tool_call("set_reflective_mode", {"enabled": False}, agent_id="lumen")
     assert out.startswith("SUCCESS:")
     assert is_reflective_mode(settings, "lumen") is False
+
+
+def test_reflective_mode_status_reads_own_flag_only(
+    lights_ready: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = lights_ready
+    monkeypatch.setattr("light_house.tools.light_tools.get_settings", lambda: settings)
+    assert read_reflective_mode(settings, "lumen") is False
+    out = execute_tool_call("reflective_mode_status", {}, agent_id="lumen")
+    assert out.startswith("SUCCESS:")
+    assert "off" in out.lower()
+    assert is_reflective_mode(settings, "lumen") is False
+
+    execute_tool_call("set_reflective_mode", {"enabled": True}, agent_id="ara")
+    out = execute_tool_call(
+        "reflective_mode_status",
+        {"agent_id": "ara"},
+        agent_id="lumen",
+    )
+    assert out.startswith("SUCCESS:")
+    assert "off" in out.lower()
+    assert is_reflective_mode(settings, "lumen") is False
+    assert is_reflective_mode(settings, "ara") is True
+
+    out = execute_tool_call("reflective_mode_status", {}, agent_id="ara")
+    assert out.startswith("SUCCESS:")
+    assert "is on" in out.lower()
+    assert is_reflective_mode(settings, "ara") is True
+
+
+def test_reflective_mode_status_when_store_disabled(
+    lights_ready: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = lights_ready
+    settings.personal_db_enabled = False
+    monkeypatch.setattr("light_house.tools.light_tools.get_settings", lambda: settings)
+    out = execute_tool_call("reflective_mode_status", {}, agent_id="elias")
+    assert out.startswith("FAILED:")
+    assert read_reflective_mode(settings, "elias") is None
 
 
 def test_log_intentional_silence(settings: Settings) -> None:

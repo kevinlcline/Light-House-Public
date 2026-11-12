@@ -297,18 +297,42 @@ def sandbox_read(
     path: str,
     space: str | None = None,
     max_chars: int = 32_000,
+    offset: int = 0,
 ) -> str:
+    """Read a sandbox file.
+
+    A long file returns one character window. ``offset`` is where that window
+    starts. The excerpt header names the offset for the next window.
+    """
     target = resolve_target(agent_id=agent_id, space=space, write=False)
     file_path = _resolve_under(target.root, path, as_dir=False)
     if not file_path.is_file():
         return _failed(f"sandbox_read — file not found in {target.label}: {path}")
     size = file_path.stat().st_size
     if size > max_chars * 4:
-        return _failed(f"sandbox_read — file too large (max ~{max_chars} characters)")
+        return _failed(f"sandbox_read — file too large (max ~{max_chars * 4} bytes)")
     text = file_path.read_text(encoding="utf-8")
-    if len(text) > max_chars:
-        text = text[:max_chars] + "\n… [truncated]"
-    return _success(f"sandbox_read ({target.label}) {sanitize_file_path(path)}\n\n{text}")
+    total = len(text)
+    try:
+        start = int(offset or 0)
+    except (TypeError, ValueError):
+        start = 0
+    start = max(0, start)
+    window = max(1, int(max_chars))
+    label = f"sandbox_read ({target.label}) {sanitize_file_path(path)}"
+    if start >= total:
+        return _success(
+            f"{label}\n\n[empty at offset {start}; total {total} characters]\n"
+        )
+    chunk = text[start : start + window]
+    end = start + len(chunk)
+    if start == 0 and end >= total:
+        return _success(f"{label}\n\n{chunk}")
+    header = (
+        f"[excerpt characters {start}-{end} of {total}; "
+        f"call sandbox_read again with offset={end} to continue]\n\n"
+    )
+    return _success(f"{label}\n\n{header}{chunk}")
 
 
 def sandbox_write(
@@ -506,11 +530,17 @@ def execute_sandbox_tool(
         if name == "sandbox_list":
             return sandbox_list(agent_id=agent_id, path=path, space=space_s)
         if name == "sandbox_read":
+            raw_offset = args.get("offset")
+            try:
+                offset_i = int(raw_offset or 0)
+            except (TypeError, ValueError):
+                offset_i = 0
             return sandbox_read(
                 agent_id=agent_id,
                 path=path,
                 space=space_s,
                 max_chars=max_read,
+                offset=max(0, offset_i),
             )
         if name == "sandbox_write":
             return sandbox_write(

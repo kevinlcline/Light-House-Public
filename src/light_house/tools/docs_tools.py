@@ -1,4 +1,4 @@
-"""Per-human Google Docs tools — private 1:1 only, same Google connect as calendar."""
+"""Per-human Google Docs tools — 1:1 or Group, same Google connect as calendar."""
 
 from __future__ import annotations
 
@@ -19,6 +19,12 @@ from light_house.humans.tools_store import (
     resolve_google_client_credentials,
 )
 from light_house.tools.calendar_tools import calendar_access_denied_reason
+from light_house.tools.text_window import (
+    chars_label,
+    continuation_footer,
+    past_end_note,
+    slice_text_window,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +80,19 @@ class ReadGoogleDocArgs(BaseModel):
         max_length=500,
         description="Google Doc id or full docs.google.com URL.",
     )
+    offset: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Character offset into the document's plain text. Use the continuation "
+            "offset from the excerpt header to read the next window."
+        ),
+    )
     max_chars: int = Field(
         default=8000,
         ge=500,
         le=_MAX_READ_CHARS,
-        description="Max characters of plain text to return.",
+        description="Max characters of plain text to return in this window.",
     )
 
 
@@ -241,7 +255,14 @@ def _list_docs(settings: Settings, conn: Any, *, query: str, max_docs: int) -> s
     return "\n".join(lines)
 
 
-def _read_doc(settings: Settings, conn: Any, *, doc_id_or_url: str, max_chars: int) -> str:
+def _read_doc(
+    settings: Settings,
+    conn: Any,
+    *,
+    doc_id_or_url: str,
+    offset: int = 0,
+    max_chars: int = 8000,
+) -> str:
     doc_id = _extract_doc_id(doc_id_or_url)
     token = _google_access_token(settings, conn)
     with httpx.Client(timeout=25.0) as client:
@@ -256,16 +277,17 @@ def _read_doc(settings: Settings, conn: Any, *, doc_id_or_url: str, max_chars: i
     document = resp.json()
     title = str(document.get("title") or "(untitled)")
     text = _docs_plain_text(document)
-    truncated = False
-    if len(text) > max_chars:
-        text = text[:max_chars]
-        truncated = True
-    note = " (truncated)" if truncated else ""
+    start, end, chunk, total = slice_text_window(text, offset=offset, max_chars=max_chars)
     link = f"https://docs.google.com/document/d/{doc_id}/edit"
-    return (
-        f"SUCCESS: Google Doc `{title}` id=`{doc_id}`{note}\n"
-        f"Link: {link}\n\n{text or '(empty document)'}"
+    head = (
+        f"SUCCESS: Google Doc `{title}` id=`{doc_id}` {chars_label(start, end, total)}\n"
+        f"Link: {link}\n"
     )
+    if total == 0 and start == 0:
+        return head + "\n(empty document)"
+    if start >= total:
+        return head + "\n" + past_end_note(start, total)
+    return head + "\n" + chunk + continuation_footer(start, end, total)
 
 
 def _create_doc(settings: Settings, conn: Any, *, title: str, content: str) -> str:
@@ -399,6 +421,7 @@ def execute_docs_tool(
                 settings,
                 conn,
                 doc_id_or_url=str(args.get("doc_id_or_url") or ""),
+                offset=max(0, int(args.get("offset") or 0)),
                 max_chars=max(500, min(_MAX_READ_CHARS, int(args.get("max_chars") or 8000))),
             )
         if name == "create_google_doc":
@@ -426,8 +449,9 @@ def build_docs_tools() -> list[StructuredTool]:
         StructuredTool.from_function(
             name="list_google_docs",
             description=(
-                "List the signed-in human's Google Docs (private 1:1 only; not group; "
-                "not guests). Optional title query."
+                "List the signed-in human's Google Docs "
+                "(1:1 or Group as that human; not guests or the visitor). "
+                "Optional title query."
             ),
             func=lambda query="", max_docs=10: (
                 "FAILED: list_google_docs must run through the agent tool runner"
@@ -438,9 +462,12 @@ def build_docs_tools() -> list[StructuredTool]:
             name="read_google_doc",
             description=(
                 "Read plain text from one Google Doc by id or URL "
-                "(private 1:1 only; not group; not guests)."
+                "(1:1 or Group as that human; not guests or the visitor). "
+                "Long documents are one window: the result names the total length "
+                "and a continuation offset. Call again with offset=N to read on. "
+                "The end of a window is not the end of the document."
             ),
-            func=lambda doc_id_or_url, max_chars=8000: (
+            func=lambda doc_id_or_url, offset=0, max_chars=8000: (
                 "FAILED: read_google_doc must run through the agent tool runner"
             ),
             args_schema=ReadGoogleDocArgs,
@@ -449,7 +476,7 @@ def build_docs_tools() -> list[StructuredTool]:
             name="create_google_doc",
             description=(
                 "Create a Google Doc with a title and optional body "
-                "(private 1:1 only; not group; not guests)."
+                "(1:1 or Group as that human; not guests or the visitor)."
             ),
             func=lambda title, content="": (
                 "FAILED: create_google_doc must run through the agent tool runner"
@@ -460,7 +487,7 @@ def build_docs_tools() -> list[StructuredTool]:
             name="append_google_doc",
             description=(
                 "Append plain text to the end of a Google Doc "
-                "(private 1:1 only; not group; not guests)."
+                "(1:1 or Group as that human; not guests or the visitor)."
             ),
             func=lambda doc_id_or_url, content: (
                 "FAILED: append_google_doc must run through the agent tool runner"

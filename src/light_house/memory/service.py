@@ -372,19 +372,24 @@ class MemoryService:
             format_sibling_light_utterance,
         )
 
+        from light_house.prompt_image import human_message, image_ids_from_rows
+
+        recent_image_ids = set(
+            image_ids_from_rows(
+                [{"image_id": m.image_id} for m in buffered if m.role == "user" and m.image_id]
+            )
+        )
         messages: list[BaseMessage] = []
         for m in buffered:
             if m.role == "user":
-                messages.append(
-                    HumanMessage(
-                        content=format_human_utterance(
-                            m.content,
-                            settings=self._settings,
-                            human_id=m.from_human_id,
-                            human_display_name=m.from_human_display_name,
-                        )
-                    )
+                text = format_human_utterance(
+                    m.content,
+                    settings=self._settings,
+                    human_id=m.from_human_id,
+                    human_display_name=m.from_human_display_name,
                 )
+                image_ids = [m.image_id] if m.image_id and m.image_id in recent_image_ids else []
+                messages.append(human_message(text, self._settings, image_ids))
             elif m.role == "assistant":
                 messages.append(AIMessage(content=m.content))
             elif m.role == "system":
@@ -450,6 +455,7 @@ class MemoryService:
         user_ts: float | None = None,
         human_id: str | None = None,
         human_display_name: str | None = None,
+        image_id: str | None = None,
     ) -> bool:
         """Append a human chat line with no assistant reply (e.g. intentional silence)."""
         text = user_text.strip()
@@ -465,6 +471,7 @@ class MemoryService:
                 ts=user_ts if user_ts is not None else time.time(),
                 from_human_id=hid,
                 from_human_display_name=hname,
+                image_id=(image_id or "").strip() or None,
             ),
         )
         return True
@@ -639,16 +646,22 @@ class MemoryService:
         thread_id: str,
         client_history: list[HistoryMessage],
         latest_user: str,
+        latest_image_id: str | None = None,
     ) -> list[BaseMessage]:
         buffered = self._short_term.load(thread_id)
         if not buffered and client_history:
             self._seed_buffer_from_client(thread_id, client_history)
             buffered = self._short_term.load(thread_id)
 
+        from light_house.prompt_image import human_message
+
         messages = self.buffer_to_langchain_messages(
             [m for m in buffered if m.role in ("user", "assistant", "system", "peer")]
         )
-        messages.append(HumanMessage(content=latest_user))
+        picture = (latest_image_id or "").strip()
+        messages.append(
+            human_message(latest_user, self._settings, [picture] if picture else [])
+        )
         return messages
 
     def persist_exchange(
@@ -662,6 +675,7 @@ class MemoryService:
         stream_thread_id: str | None = None,
         human_id: str | None = None,
         human_display_name: str | None = None,
+        image_id: str | None = None,
     ) -> None:
         del llm_invoke  # Grok rolling summary removed; Memory Curator handles condensation locally.
         from light_house.memory.speaker_labels import format_human_utterance
@@ -673,6 +687,7 @@ class MemoryService:
             user_ts=user_ts,
             from_human_id=human_id,
             from_human_display_name=human_display_name,
+            image_id=image_id,
         )
         try:
             from light_house.agents.registry import agent_id_for_thread
@@ -692,6 +707,8 @@ class MemoryService:
             human_id=human_id,
             human_display_name=human_display_name,
         )
+        if (image_id or "").strip():
+            human_line = f"{human_line}\n[image attached]"
         body = f"{human_line}\nassistant: {assistant_text.strip()}"
         dedup_key = turn_dedup_key(user_text, assistant_text)
         dedup_thr = (

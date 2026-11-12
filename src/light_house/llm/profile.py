@@ -99,10 +99,28 @@ def validate_agent_llm_profiles(settings: Settings) -> None:
         raise ValueError("Agent LLM configuration invalid: " + "; ".join(errors))
 
 
-def describe_echo_dream_llm(settings: Settings) -> str:
-    provider_raw = (settings.echo_dream_llm_provider or "").strip()
+_FREE_ROUTER_SLUGS = frozenset({"openrouter/free", "openrouter/auto"})
+
+
+def echo_dream_uses_inner_life(settings: Settings) -> bool:
+    """True when Echo should use each light's inner-life model.
+
+    An unset dream provider does that. So does the free/auto router: it
+    returns empty dream beats (HTTP 200, no text) and is not a dream model.
+    """
+    provider_raw = (settings.echo_dream_llm_provider or "").strip().lower()
     if not provider_raw:
+        return True
+    if provider_raw != LLMProvider.OPENROUTER.value:
+        return False
+    model = (settings.echo_dream_llm_model or "").strip().lower()
+    return model in _FREE_ROUTER_SLUGS
+
+
+def describe_echo_dream_llm(settings: Settings) -> str:
+    if echo_dream_uses_inner_life(settings):
         return "per-light inner-life chain"
+    provider_raw = (settings.echo_dream_llm_provider or "").strip()
     if provider_raw.lower() == "ollama":
         model = (settings.echo_dream_llm_model or settings.ollama_model).strip()
         return f"ollama/{model}"

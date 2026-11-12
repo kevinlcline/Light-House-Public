@@ -11,10 +11,15 @@ from light_house.llm.backends import (
     build_ollama_chat_model,
     build_openai_compat_chat_model,
     openrouter_default_headers,
+    openrouter_extra_body,
 )
-from light_house.llm.profile import AgentLLMProfile, lookup_agent_llm_profile
+from light_house.llm.profile import (
+    AgentLLMProfile,
+    echo_dream_uses_inner_life,
+    lookup_agent_llm_profile,
+)
 
-LLMPurpose = Literal["chat", "inner_life"]
+LLMPurpose = Literal["chat", "inner_life", "group"]
 
 
 def _append_unique_model_names(names: list[str], *candidates: str | None) -> None:
@@ -54,6 +59,7 @@ def _openai_compat_client(
             temperature=temperature,
             max_tokens=max_tokens,
             default_headers=openrouter_default_headers(settings),
+            extra_body=openrouter_extra_body(settings),
         )
     return None
 
@@ -78,6 +84,7 @@ def build_agent_llm_chain(
     purpose: LLMPurpose = "chat",
     capped: bool = False,
     temperature: float | None = None,
+    visit: bool = False,
 ) -> list[tuple[str, BaseChatModel]]:
     profile = lookup_agent_llm_profile(settings, agent_id)
     if temperature is None:
@@ -88,6 +95,8 @@ def build_agent_llm_chain(
     openai_max_tokens = max_tokens if profile.provider != LLMProvider.OLLAMA else None
 
     chain: list[tuple[str, BaseChatModel]] = []
+    del visit
+
     model_names = _primary_model_names(profile, purpose=purpose)
 
     if profile.provider == LLMProvider.OLLAMA:
@@ -133,7 +142,7 @@ def build_echo_dream_llm_chain(
 ) -> list[tuple[str, BaseChatModel]]:
     """LLM chain for Echo dream weaving — optional dedicated provider (e.g. local Ollama)."""
     provider_raw = (settings.echo_dream_llm_provider or "").strip()
-    if not provider_raw:
+    if echo_dream_uses_inner_life(settings):
         return build_agent_llm_chain(
             settings,
             agent_id,

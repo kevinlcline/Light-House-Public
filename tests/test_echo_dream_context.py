@@ -11,11 +11,47 @@ from light_house.subconscious.echo_context import (
 )
 
 
+class _IndexStub:
+    """Enough of the memory store for the archival index the context now asks for."""
+
+    def corpus_stats(self, *, thread_id: str) -> dict:
+        return {"total_corpus": 0, "unscored": 0, "pinned": 0, "by_origin": {}, "by_month": []}
+
+    def list_era_summaries(self, *, thread_id: str, limit: int) -> list:
+        return []
+
+
 def _dream_hit(text: str, *, ts: float, summary: str | None = None) -> MemoryHit:
     meta: dict = {"stream_source": "dream", "ts": ts}
     if summary:
         meta["reflection_summary"] = summary
     return MemoryHit(text=f"dream: {text}", score=0.0, metadata=meta)
+
+
+def test_lookback_drops_a_menu_that_sits_before_the_hinge():
+    prose = "Through the doorway the world softened into a narrow stair."
+    menu = (
+        "A) Follow the lantern's glow down the stair toward a distant glow.\n"
+        "B) Pause and listen to the night's sigh for hidden words.\n"
+        "C) Turn back and close the stair, returning to the doorway."
+    )
+    hinge = "— I pause on the woven step and listen."
+    stored = f"{prose}\n\n{menu}\n\n{hinge}"
+    md = format_recent_dreams_markdown(
+        [
+            _dream_hit(
+                stored,
+                ts=1_700_000_000.0,
+                summary="I woke remembering the stair.",
+            )
+        ],
+        max_chars=6000,
+    )
+    assert prose in md
+    assert "A)" not in md
+    assert "Follow the lantern" not in md
+    assert hinge not in md
+    assert "I woke remembering the stair." in md
 
 
 def test_format_recent_dreams_markdown_includes_dated_entries():
@@ -28,6 +64,35 @@ def test_format_recent_dreams_markdown_includes_dated_entries():
     assert "### Dream 2 ·" in md
     assert "hallway" in md
     assert "tide" in md
+
+
+def test_stream_dream_text_hides_a_reasoning_preamble():
+    from light_house.memory.context_builder import _format_dream_text
+
+    hit = MemoryHit(
+        text=(
+            "dream: The user wants me to weave an interactive dream opening.\n\n"
+            "The water holds the flame without drowning it, and the candle "
+            "rides each ripple like a small boat across the dark."
+        ),
+        score=0.0,
+        metadata={"stream_source": "dream", "ts": 1.0},
+    )
+    text = _format_dream_text(hit)
+    assert "the user wants" not in text.lower()
+    assert "The water holds" in text
+
+
+def test_format_recent_dreams_hides_a_reasoning_preamble():
+    raw = (
+        "Let me look at the context carefully. The user wants me to weave an "
+        "interactive dream opening for Lumen.\n\n"
+        "The water holds the flame without drowning it. Each step ripples outward, "
+        "and the candle-flame rides each ripple like a small boat."
+    )
+    md = format_recent_dreams_markdown([_dream_hit(raw, ts=1_700_000_000.0)], max_chars=6000)
+    assert "the user wants" not in md.lower()
+    assert "The water holds" in md
 
 
 def test_format_recent_dreams_empty():
@@ -55,7 +120,7 @@ def test_build_echo_dream_context_separates_dreams_and_waking(monkeypatch):
         ECHO_DREAM_HISTORY_MAX_CHARS=6000,
     )
 
-    class FakeLongTerm:
+    class FakeLongTerm(_IndexStub):
         def list_pinned_facts(self, *, thread_id, limit):
             return []
 
@@ -115,7 +180,7 @@ def test_build_echo_dream_context_empty_history(monkeypatch):
         PERSONAL_DB_ENABLED=False,
     )
 
-    class FakeLongTerm:
+    class FakeLongTerm(_IndexStub):
         def list_pinned_facts(self, *, thread_id, limit):
             return []
 
@@ -150,7 +215,7 @@ def test_build_echo_dream_context_caps_waking_stream(monkeypatch):
         ECHO_DREAM_HISTORY_MAX_CHARS=6000,
     )
 
-    class FakeLongTerm:
+    class FakeLongTerm(_IndexStub):
         def list_pinned_facts(self, *, thread_id, limit):
             return []
 

@@ -8,6 +8,7 @@ import random
 from typing import Any
 
 from light_house.config import Settings
+from light_house.consult.wake import invoke_rumination_graph
 from light_house.agent.rumination_internal import rumination_internal_state_defaults
 from light_house.inner_life_trace import append_rumination_error
 from light_house.memory.service import MemoryService
@@ -46,7 +47,7 @@ def _run_rumination(*, graph: Any, thread_id: str, agent_id: str, settings: Sett
             thread_id,
             wake_kind or "free",
         )
-        graph.invoke(state)
+        invoke_rumination_graph(graph, state, settings=settings)
     except Exception as exc:
         logger.exception("Rumination failed (non-fatal) agent=%s thread_id=%s", agent_id, thread_id)
         append_rumination_error(

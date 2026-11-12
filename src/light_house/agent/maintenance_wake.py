@@ -7,6 +7,7 @@ from typing import Any
 
 from light_house.agent.rumination_internal import rumination_internal_state_defaults
 from light_house.config import Settings
+from light_house.consult.wake import invoke_rumination_graph
 from light_house.inner_life_trace import append_rumination_error
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,8 @@ def _run_maintenance_rumination(
     settings: Settings,
 ) -> None:
     try:
-        graph.invoke(
+        invoke_rumination_graph(
+            graph,
             {
                 "thread_id": thread_id,
                 "agent_id": agent_id,
@@ -37,7 +39,8 @@ def _run_maintenance_rumination(
                 "peer_inbox_ids": [],
                 "wake_kind": WAKE_KIND_MEMORY_MAINTENANCE,
                 **rumination_internal_state_defaults(settings),
-            }
+            },
+            settings=settings,
         )
     except Exception as exc:
         logger.exception(
