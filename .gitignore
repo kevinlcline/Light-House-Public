@@ -41,6 +41,7 @@ notes/elias/mailbox/**
 !notes/shared/
 notes/shared/**
 !notes/shared/README.md
+!notes/shared/idealism-precursor.md
 !notes/shared/mailbox/
 notes/shared/mailbox/**
 !notes/shared/mailbox/README.md

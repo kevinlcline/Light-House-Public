@@ -17,6 +17,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 from light_house.config import Settings, get_settings
+from light_house.humans.google_calendar_oauth import CALLBACK_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +40,17 @@ _PUBLIC_GET_PATHS = frozenset(
     }
 )
 _PUBLIC_DIR_PREFIX = "/public/"
+_STATIC_DIR_PREFIX = "/static/"
 
 
-def safe_public_file(repo_root: Path, url_path: str) -> Path | None:
-    """Resolve a /public/… URL to a file under repo_root/public, or None."""
-    if not url_path.startswith(_PUBLIC_DIR_PREFIX):
+def _safe_repo_subdir_file(repo_root: Path, url_path: str, prefix: str, subdir: str) -> Path | None:
+    """Resolve a /{subdir}/… URL to a file under repo_root/{subdir}, or None."""
+    if not url_path.startswith(prefix):
         return None
-    rel = url_path[len(_PUBLIC_DIR_PREFIX) :]
+    rel = url_path[len(prefix) :]
     if not rel or rel.startswith("/") or ".." in rel.split("/"):
         return None
-    root = (repo_root / "public").resolve()
+    root = (repo_root / subdir).resolve()
     target = (root / rel).resolve()
     try:
         target.relative_to(root)
@@ -57,6 +59,16 @@ def safe_public_file(repo_root: Path, url_path: str) -> Path | None:
     if target.is_file():
         return target
     return None
+
+
+def safe_public_file(repo_root: Path, url_path: str) -> Path | None:
+    """Resolve a /public/… URL to a file under repo_root/public, or None."""
+    return _safe_repo_subdir_file(repo_root, url_path, _PUBLIC_DIR_PREFIX, "public")
+
+
+def safe_static_file(repo_root: Path, url_path: str) -> Path | None:
+    """Resolve a /static/… URL to a file under repo_root/static, or None."""
+    return _safe_repo_subdir_file(repo_root, url_path, _STATIC_DIR_PREFIX, "static")
 
 
 def _public_media_type(path: Path) -> str:
@@ -68,6 +80,27 @@ def _public_media_type(path: Path) -> str:
     if suffix in {".txt", ".md"}:
         return "text/plain; charset=utf-8"
     return "text/html; charset=utf-8"
+
+
+def _static_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".css":
+        return "text/css; charset=utf-8"
+    if suffix == ".js":
+        return "text/javascript; charset=utf-8"
+    if suffix == ".svg":
+        return "image/svg+xml"
+    if suffix == ".png":
+        return "image/png"
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".webp":
+        return "image/webp"
+    if suffix == ".woff2":
+        return "font/woff2"
+    if suffix == ".map":
+        return "application/json; charset=utf-8"
+    return "application/octet-stream"
 
 
 
@@ -181,8 +214,34 @@ def clear_session_cookie_header(*, secure: bool) -> str:
 
 
 def _wants_html(request: Request) -> bool:
-    accept = request.headers.get("accept", "")
-    return "text/html" in accept or "*/*" in accept or not accept
+    """True when a login HTML redirect is appropriate (not for CSS/JS/assets).
+
+    Browsers request stylesheets with Accept: text/css,*/*;q=0.1. Treating any
+    ``*/*`` as HTML caused the gate to 302 to /login and serve HTML as the
+    stylesheet body — which looks like corrupted/missing CSS.
+    """
+    accept = (request.headers.get("accept") or "").lower().strip()
+    if not accept:
+        return True
+    # Chrome's document Accept lists text/html and image/avif together.
+    # A document navigation should reach the login page. Asset-only requests
+    # (css, script, image) do not include text/html.
+    if "text/html" in accept:
+        return True
+    asset_markers = (
+        "text/css",
+        "text/javascript",
+        "application/javascript",
+        "application/json",
+        "image/",
+        "font/",
+        "application/font",
+        "application/wasm",
+    )
+    if any(marker in accept for marker in asset_markers):
+        return False
+    # Bare */* (or */* as the only meaningful token) → navigate to login.
+    return "*/*" in accept
 
 
 def _login_redirect(path: str) -> RedirectResponse:
@@ -218,6 +277,19 @@ class WebGateMiddleware(BaseHTTPMiddleware):
         # Public homepage notify signup (no session required).
         if path == "/v1/public/notify" and method == "POST":
             return await call_next(request)
+
+        # Shared UI assets (CSS/JS/images) are not secret. Serve them here with
+        # no-store so Cloudflare/browsers cannot keep a poisoned copy (e.g. an
+        # old login HTML body that made the chat page look unstyled/corrupt).
+        if method in ("GET", "HEAD") and path.startswith(_STATIC_DIR_PREFIX):
+            static_file = safe_static_file(self.repo_root, path)
+            if static_file is None:
+                return Response("Not found", status_code=404)
+            return FileResponse(
+                static_file,
+                media_type=_static_media_type(static_file),
+                headers=NO_STORE_HEADERS,
+            )
 
         # robots.txt / llms.txt / favicons — crawlers (Gemini, Googlebot, …) need these
         # without hitting the password gate. Serve text files here with no-store so
@@ -266,6 +338,13 @@ class WebGateMiddleware(BaseHTTPMiddleware):
             return Response("Not found", status_code=404)
 
         if authed:
+            return await call_next(request)
+
+        # Google's browser return is cross-site. The SameSite=Lax session cookie
+        # often does not arrive, and a JSON 401 here is what the phone showed.
+        # The handler accepts a short-lived return cookie set on Connect, and
+        # otherwise sends the browser back to My tools.
+        if path == CALLBACK_PATH and method == "GET":
             return await call_next(request)
 
         if path.startswith("/v1/"):

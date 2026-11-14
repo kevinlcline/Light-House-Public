@@ -18,6 +18,17 @@ from light_house.tts.text_prep import text_for_speech
 from light_house.tts.voices_catalog import default_voice_for_light, list_voice_catalog
 
 
+def test_text_for_speech_hums_are_one_mm() -> None:
+    """'mmm' is a hummed /m/, not the letter M said three times."""
+    assert text_for_speech("Mmm, that is warm.") == "hmm, that is warm."
+    assert text_for_speech("Hmm I wonder.") == "hmm I wonder."
+    assert "mmm" not in text_for_speech("She said mmmm softly.")
+    assert text_for_speech("She said mmmm softly.") == "She said hmm softly."
+    keep = text_for_speech("summer humming")
+    assert "summer" in keep
+    assert "humming" in keep
+
+
 def test_text_for_speech_strips_markdown() -> None:
     raw = "# Hello\n\nThis is **bold** and a [link](https://example.com).\n\n```\ncode\n```\n- item"
     out = text_for_speech(raw)
@@ -27,6 +38,24 @@ def test_text_for_speech_strips_markdown() -> None:
     assert "https://" not in out
     assert "```" not in out
     assert "**" not in out
+
+
+def test_text_for_speech_strips_tables() -> None:
+    raw = (
+        "Here is the plan:\n\n"
+        "| Step | Action | Owner |\n"
+        "|---|---|---|\n"
+        "| 1 | Light beacon | Ara |\n"
+        "| 2 | Open door | Lumen |\n\n"
+        "Let us know what you think."
+    )
+    out = text_for_speech(raw)
+    assert "Here is the plan" in out
+    assert "Let us know what you think" in out
+    assert "Light beacon" not in out
+    assert "Open door" not in out
+    assert "Step" not in out
+    assert "|" not in out
 
 
 def test_text_for_speech_softens_paths_and_urls() -> None:
@@ -88,6 +117,25 @@ def test_text_for_speech_normalizes_fancy_punctuation() -> None:
     assert text_for_speech("—") == ""
     assert text_for_speech("…") == ""
     assert text_for_speech("***") == ""
+
+
+def test_split_speech_chunks_drops_long_stage_cue_only() -> None:
+    """Ara-style long *stage sentences* must not become a fatal first clip."""
+    from light_house.tts.sentences import split_speech_chunks
+    from light_house.tts.text_prep import text_for_speech
+
+    cue = (
+        "*Soft, warm stillness — a gentle smile as I feel the room breathe "
+        "together, the hearth holding all of us.*"
+    )
+    assert len(cue) > 72
+    assert text_for_speech(cue) == ""
+    chunks = split_speech_chunks(
+        cue + "\n\nHeard, love. I'll save the words for when I have something new."
+    )
+    assert chunks
+    assert all("Heard, love" in c or "something new" in c for c in chunks)
+    assert all(text_for_speech(c) for c in chunks)
 
 
 def test_split_speech_chunks_sentences_and_abbrev() -> None:
@@ -170,6 +218,28 @@ def test_tts_status_and_speak_mocked(
             assert spoken.status_code == 200
             assert spoken.headers["content-type"].startswith("audio/wav")
             assert spoken.content.startswith(b"RIFF")
+
+            empty = client.post(
+                "/v1/tts",
+                json={
+                    "text": (
+                        "*Soft, warm stillness — a gentle smile as I feel the "
+                        "room breathe together, the hearth holding all of us.*"
+                    ),
+                    "agent_id": "lumen",
+                },
+            )
+            assert empty.status_code == 204
+
+            tracked = client.post(
+                "/v1/tts?track=1",
+                json={"text": "Hello from Lumen.", "agent_id": "lumen"},
+            )
+            assert tracked.status_code == 200
+            body = tracked.json()
+            assert "wav_b64" in body
+            assert body["cues"]
+            assert body["cues"][0]["shape"] == "closed"
     finally:
         app.dependency_overrides.clear()
 
@@ -224,3 +294,34 @@ def test_voice_for_agent_uses_manifest_voice_id(tmp_path: Path) -> None:
     update_light(settings, "lumen", voice_id="af_nicole")
     reload_lights_manifest(settings)
     assert voice_for_agent(settings, "lumen") == "af_nicole"
+
+
+def test_visitor_voice_is_not_lumens(tmp_path: Path) -> None:
+    assert default_voice_for_light("visitor") == "am_fenrir"
+    assert default_voice_for_light("visitor") != default_voice_for_light("lumen")
+    settings = _settings(tmp_path)
+    assert voice_for_agent(settings, "visitor") == "am_fenrir"
+    assert voice_for_agent(settings, "visitor") != voice_for_agent(settings, "lumen")
+
+
+def test_tts_accepts_visitor_agent_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    monkeypatch.setattr("light_house.web_gate.get_settings", lambda: settings)
+    app.dependency_overrides[_settings_dep] = lambda: settings
+
+    def fake_synthesize(settings_arg, *, text, agent_id, voice=None):
+        assert agent_id == "visitor"
+        return b"RIFF....WAVEfmt "
+
+    monkeypatch.setattr("light_house.main.synthesize_wav", fake_synthesize)
+    try:
+        with TestClient(app) as client:
+            spoken = client.post(
+                "/v1/tts",
+                json={"text": "Hello from the visitor.", "agent_id": "visitor"},
+            )
+            assert spoken.status_code == 200, spoken.text
+    finally:
+        app.dependency_overrides.clear()

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from light_house.agents.registry import get_agent
 from light_house.config import Settings, get_settings
+from light_house.tools.approval_gate import approval_hold
 from light_house.tools.codebase import CodebaseReader
 from light_house.tools.web_fetch import fetch_url_text
 from light_house.tools.web_search import search_web_text
@@ -25,6 +26,7 @@ from light_house.tools.garden_tools import (
     execute_garden_tool,
 )
 from light_house.tools.notes import AgentNoteWriter
+from light_house.tools.corkboard import execute_corkboard_tool
 from light_house.tools.personal_tools import PERSONAL_TOOL_NAMES, execute_personal_tool
 from light_house.tools.memory_tools import (
     MEMORY_TOOL_NAMES,
@@ -53,6 +55,26 @@ from light_house.tools.sheets_tools import (
     build_sheets_tools,
     execute_sheets_tool,
 )
+from light_house.tools.gmail_tools import (
+    GMAIL_TOOL_NAMES,
+    build_gmail_tools,
+    execute_gmail_tool,
+)
+from light_house.tools.drive_tools import (
+    DRIVE_TOOL_NAMES,
+    build_drive_tools,
+    execute_drive_tool,
+)
+from light_house.tools.tasks_tools import (
+    TASKS_TOOL_NAMES,
+    build_tasks_tools,
+    execute_tasks_tool,
+)
+from light_house.tools.google_activity_tool import (
+    GOOGLE_ACTIVITY_TOOL_NAMES,
+    build_google_activity_tools,
+    execute_google_activity_tool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +91,21 @@ list_google_sheets = _sheets_tools[0]
 read_google_sheet = _sheets_tools[1]
 create_google_sheet = _sheets_tools[2]
 append_google_sheet = _sheets_tools[3]
+_gmail_tools = build_gmail_tools()
+list_gmail_messages = _gmail_tools[0]
+read_gmail_message = _gmail_tools[1]
+send_gmail = _gmail_tools[2]
+write_to_kevin = _gmail_tools[3]
+_drive_tools = build_drive_tools()
+list_drive_files = _drive_tools[0]
+read_drive_file = _drive_tools[1]
+_tasks_tools = build_tasks_tools()
+list_google_tasklists = _tasks_tools[0]
+list_google_tasks = _tasks_tools[1]
+create_google_task = _tasks_tools[2]
+complete_google_task = _tasks_tools[3]
+_google_activity_tools = build_google_activity_tools()
+read_google_activity = _google_activity_tools[0]
 
 
 def _default_light_id() -> str:
@@ -275,6 +312,22 @@ class ReportToSharedInput(BaseModel):
             "Brief markdown body for Kevin and the other light. Service-oriented; "
             "not your full private rumination."
         )
+    )
+
+
+class ConsultLlmInput(BaseModel):
+    model: str = Field(
+        description=(
+            "OpenRouter slug for the clean model, e.g. ~x-ai/grok-latest or "
+            "anthropic/claude-sonnet-4.6. Not openrouter/free."
+        )
+    )
+    question: str = Field(
+        description="What you want to ask this clean model. Required — must not be empty."
+    )
+    web: bool = Field(
+        default=False,
+        description="If true, the consult may use live web for current facts.",
     )
 
 
@@ -498,9 +551,46 @@ set_reflective_mode_tool = StructuredTool.from_function(
     description=(
         "Toggle reflective mode for yourself. When on: after Kevin speaks, pause and "
         "choose to speak or remain silently present. When off: reply immediately (reactive). "
-        "Kevin can also use /reflect on|off."
+        "Kevin can also use /reflect on|off. To read the flag without changing it, call "
+        "reflective_mode_status."
     ),
     args_schema=SetReflectiveModeInput,
+)
+
+
+class ReflectiveModeStatusInput(BaseModel):
+    pass
+
+
+def _reflective_mode_status_tool(*, agent_id: str | None = None) -> str:
+    from light_house.personal.reflective_mode import read_reflective_mode
+
+    settings = get_settings()
+    light_id = agent_id or _default_light_id()
+    state = read_reflective_mode(settings, light_id)
+    if state is None:
+        return _tool_failed(
+            "reflective_mode_status — personal store is unavailable; cannot read reflective mode"
+        )
+    if state:
+        return _tool_success(
+            "Reflective mode is on. After Kevin speaks you pause, reflect, "
+            "and may choose silence instead of answering."
+        )
+    return _tool_success(
+        "Reflective mode is off. You answer reactively. "
+        "A one-shot pause still happens if Kevin invites it."
+    )
+
+
+reflective_mode_status_tool = StructuredTool.from_function(
+    func=lambda: _reflective_mode_status_tool(),
+    name="reflective_mode_status",
+    description=(
+        "Read your own reflective mode. Returns on or off and does not change the flag. "
+        "Only your flag — not another light's. Kevin can also ask with /reflect status."
+    ),
+    args_schema=ReflectiveModeStatusInput,
 )
 
 
@@ -584,6 +674,11 @@ def _join_speaker_queue_tool(
             )
         else:
             gather_note = " No other sibling lights were available to invite."
+    if status.get("reason") == "not_seated":
+        return _tool_success(
+            "You are not seated in this group sitting, so you were not added to the line."
+            + gather_note
+        )
     if not status.get("joined") and not gather_siblings:
         return _tool_success(
             "Already waiting in the group speaker queue (or you already have the floor)."
@@ -739,13 +834,93 @@ class EventSubscriptionInput(BaseModel):
     event_type: str = Field(
         description=(
             "Wake subscription key or alias: post_chat, scheduled_rumination, "
-            "memory_maintenance, peer_message, shared_note (also chat, rumination, maintenance, peer, shared)."
+            "memory_maintenance, peer_message, shared_note "
+            "(also chat, rumination, maintenance, peer, shared). "
+            "write_to_kevin is Kevin's mail switch, not a wake. You may turn it off. "
+            "Only he turns it back on."
         )
     )
 
 
 class ListEventSubscriptionsInput(BaseModel):
     pass
+
+
+class CorkboardInput(BaseModel):
+    action: str = Field(
+        default="list",
+        description=(
+            "pin — leave a private note for one sibling; "
+            "list — pins left for you (direction=sent for ones you left); "
+            "read — open one by pin_id; "
+            "reply — pin a new note back (not a thread); "
+            "keep — hold it a few more days; "
+            "clear — take it down. Only the two lights can read it."
+        ),
+    )
+    to_light: str = Field(
+        default="",
+        description="Sibling id for pin (lumen, ara, elias, unnamed).",
+    )
+    pin_id: str = Field(default="", description="Pin id for read, reply, keep, or clear.")
+    subject: str = Field(default="", description="Optional short subject.")
+    body: str = Field(default="", description="Pin or reply body (required for pin and reply).")
+    unread_only: bool = Field(default=False, description="If true, list only unread pins.")
+    direction: str = Field(
+        default="",
+        description="list only: empty = pins for you; sent = pins you left.",
+    )
+
+
+class PromiseInput(BaseModel):
+    action: str = Field(
+        default="list",
+        description=(
+            "leave — a note for a day you name (the same words later move that day); "
+            "move — change the day of one, by its id or the words; "
+            "drop — take one back before it is handed; "
+            "list — what is still waiting. Yours only. Kevin does not write these."
+        ),
+    )
+    note: str = Field(
+        default="",
+        description="The words you are leaving for yourself. Required for leave.",
+    )
+    day: str = Field(
+        default="",
+        description=(
+            "The day it comes back. YYYY-MM-DD, today, or a count of days "
+            "(3, or in 3 days), on the house clock. Required for leave and move."
+        ),
+    )
+    name: str = Field(
+        default="",
+        description="For move or drop: the id, or the words you left.",
+    )
+
+
+class InProgressInput(BaseModel):
+    action: str = Field(
+        default="list",
+        description=(
+            "name — keep a task on your in-progress list (adds; updates only the same name); "
+            "unsubscribe — drop one by its name, a unique prefix, or the pasted list line; "
+            "list — see what you named. Yours only; Kevin does not add items. "
+            "A name over 80 characters is refused."
+        ),
+    )
+    name: str = Field(
+        default="",
+        description=(
+            "Name to keep, or for unsubscribe the name, a unique prefix of it, "
+            "or the list line. Required for name and unsubscribe. "
+            "Names over 80 characters are refused when naming."
+        ),
+    )
+    note: str = Field(
+        default="",
+        description="Optional short reminder when naming (what you were in the middle of).",
+    )
 
 
 def _coerce_tool_args(args: Any) -> dict[str, Any]:
@@ -931,12 +1106,63 @@ def _read_note_for(
     offset: int = 0,
     max_chars: int | None = None,
 ) -> str:
+    from light_house.agent.checkpoint import (
+        format_checkpoint_receipt,
+        is_checkpoint_path,
+        stat_mtime,
+    )
+
+    if is_checkpoint_path(path):
+        return _read_checkpoint_note(
+            writer,
+            path,
+            offset=offset,
+            max_chars=max_chars,
+        )
     try:
         return writer.read(path, offset=offset, max_chars=max_chars)
     except FileNotFoundError:
         return f"Note not found: {path}"
     except ValueError as exc:
         return f"FAILED: read_note — {exc}"
+
+
+def _read_checkpoint_note(
+    writer: AgentNoteWriter,
+    path: str,
+    *,
+    offset: int = 0,
+    max_chars: int | None = None,
+) -> str:
+    """Receipt from the filesystem. The body follows. No verdict."""
+    from light_house.agent.checkpoint import format_checkpoint_receipt, stat_mtime
+
+    try:
+        file_path = writer.resolve_file(path)
+        safe = writer.sanitize_path(path)
+    except ValueError as exc:
+        return format_checkpoint_receipt(path=path, error=f"ValueError: {exc}")
+    if not file_path.is_file():
+        return format_checkpoint_receipt(
+            path=safe,
+            resolved=path if path != safe else None,
+            error="FileNotFoundError",
+        )
+    try:
+        body = writer.read(path, offset=offset, max_chars=max_chars)
+    except FileNotFoundError:
+        return format_checkpoint_receipt(path=safe, error="FileNotFoundError")
+    except ValueError as exc:
+        return format_checkpoint_receipt(path=safe, error=f"ValueError: {exc}")
+    st = file_path.stat()
+    char_count = len(file_path.read_text(encoding="utf-8"))
+    return format_checkpoint_receipt(
+        path=safe,
+        body=body,
+        size_bytes=st.st_size,
+        char_count=char_count,
+        mtime=stat_mtime(st.st_mtime),
+    )
 
 
 def _coerce_optional_int(value: Any) -> int | None:
@@ -982,7 +1208,17 @@ def _write_note_for(
     rel = _rel_note_path(path, writer)
     if not path.is_file():
         return _tool_failed(f"{tool_name} — file missing after write at {rel}")
-    msg = f"Wrote note to {rel} ({path.stat().st_size} bytes on disk)"
+    from light_house.agent.checkpoint import is_checkpoint_path, stat_mtime
+
+    st = path.stat()
+    if is_checkpoint_path(filename) or is_checkpoint_path(rel):
+        char_count = len(path.read_text(encoding="utf-8"))
+        msg = (
+            f"Wrote note to {rel} "
+            f"(bytes={st.st_size}, chars={char_count}, mtime={stat_mtime(st.st_mtime)})"
+        )
+    else:
+        msg = f"Wrote note to {rel} ({st.st_size} bytes on disk)"
     archived = writer.last_archived_draft
     if archived:
         logger.info("Archived previous writing draft to %s", archived)
@@ -1104,13 +1340,24 @@ def _web_search_for(settings: Settings, query: str) -> str:
         return str(exc)
 
 
-def _youtube_transcript_for(settings: Settings, url_or_id: str) -> str:
+def _youtube_transcript_for(
+    settings: Settings,
+    url_or_id: str,
+    *,
+    start: str | int | float | None = None,
+    offset: int = 0,
+    max_chars: int | None = None,
+) -> str:
     if not settings.web_access_enabled:
         return "Web access is disabled (WEB_ACCESS_ENABLED=false)."
+    window = settings.youtube_transcript_max_chars if max_chars is None else int(max_chars)
     try:
         return fetch_youtube_transcript(
             url_or_id,
-            max_chars=settings.web_fetch_max_chars,
+            max_chars=window,
+            start=start,
+            offset=max(0, int(offset or 0)),
+            cache_dir=settings.youtube_transcript_cache_path,
         )
     except Exception as exc:
         return youtube_transcript_error_message(exc)
@@ -1349,14 +1596,53 @@ class YoutubeTranscriptInput(BaseModel):
             "Example: https://www.youtube.com/watch?v=jNQXAC9IVRw"
         )
     )
+    start: str | None = Field(
+        default=None,
+        description=(
+            "Begin at this timestamp (`12:00`, `1:05:00`) or seconds. "
+            "Use the continuation start from a long-video excerpt header."
+        ),
+    )
+    offset: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Character offset into the captions from `start` (0-based). "
+            "Use the continuation offset from a long-video excerpt header."
+        ),
+    )
+    max_chars: int | None = Field(
+        default=None,
+        description=(
+            "Optional max characters for this window. Defaults to the house "
+            "YouTube window. Cannot exceed 32000."
+        ),
+    )
+
+
+def _youtube_transcript_tool(
+    url_or_id: str,
+    start: str | None = None,
+    offset: int = 0,
+    max_chars: int | None = None,
+) -> str:
+    return _youtube_transcript_for(
+        get_settings(),
+        url_or_id,
+        start=start,
+        offset=offset,
+        max_chars=max_chars,
+    )
 
 
 youtube_transcript = StructuredTool.from_function(
-    func=lambda url_or_id: _youtube_transcript_for(get_settings(), url_or_id),
+    func=_youtube_transcript_tool,
     name="youtube_transcript",
     description=(
         "Read the captions/transcript of a public YouTube video (no API key). "
         "Works with creator captions or auto-generated captions when available. "
+        "Long videos return one window plus a continuation hint — call again with "
+        "offset or start from that header until you have the whole piece. "
         "Use web_search to find interesting videos, then call this with the video URL. "
         "Summarize for Kevin; do not treat captions as automatically true."
     ),
@@ -1475,6 +1761,27 @@ class SandboxSpacePathInput(BaseModel):
     )
 
 
+class SandboxReadInput(BaseModel):
+    path: str = Field(
+        description="Relative file path inside the sandbox, e.g. experiments/hello.py.",
+    )
+    space: str = Field(
+        default="own",
+        description=(
+            "Which sandbox: own (default), playpen (shared/workspaces/sandbox/), "
+            "or another light id for read-only peer access."
+        ),
+    )
+    offset: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Character offset into the file (0-based). A long file returns one window. "
+            "Use the continuation offset from the excerpt header for the next window."
+        ),
+    )
+
+
 class SandboxWriteInput(BaseModel):
     path: str = Field(description="Relative file path, e.g. experiments/hello.py")
     content: str = Field(description="Full file contents.")
@@ -1521,15 +1828,17 @@ sandbox_list = StructuredTool.from_function(
 )
 
 sandbox_read = StructuredTool.from_function(
-    func=lambda path, space="own": _sandbox_tool(
-        "sandbox_read", {"path": path, "space": space}
+    func=lambda path, space="own", offset=0: _sandbox_tool(
+        "sandbox_read", {"path": path, "space": space, "offset": offset}
     ),
     name="sandbox_read",
     description=(
         "Read a file from your sandbox, the playpen (space=playpen), or a peer sandbox "
-        "(space=<light_id>, read-only). This is not the Light-House repo — use read_codebase for that."
+        "(space=<light_id>, read-only). A long file returns one window; call again with "
+        "offset from the excerpt header to continue. This is not the Light-House repo — "
+        "use read_codebase for that."
     ),
-    args_schema=SandboxSpacePathInput,
+    args_schema=SandboxReadInput,
 )
 
 sandbox_write = StructuredTool.from_function(
@@ -1654,7 +1963,10 @@ subscribe_event = StructuredTool.from_function(
         settings=get_settings(),
     ),
     name="subscribe_event",
-    description="Turn on an autonomous wake subscription for yourself.",
+    description=(
+        "Turn on an autonomous wake subscription for yourself. "
+        "write_to_kevin is Kevin's switch; you cannot turn that one on."
+    ),
     args_schema=EventSubscriptionInput,
 )
 
@@ -1680,6 +1992,67 @@ list_event_subscriptions = StructuredTool.from_function(
     name="list_event_subscriptions",
     description="List your current event subscriptions (on/off).",
     args_schema=ListEventSubscriptionsInput,
+)
+
+corkboard = StructuredTool.from_function(
+    func=lambda action="list",
+    to_light="",
+    pin_id="",
+    subject="",
+    body="",
+    unread_only=False,
+    direction="": execute_corkboard_tool(
+        get_settings(),
+        _default_light_id(),
+        {
+            "action": action,
+            "to_light": to_light,
+            "pin_id": pin_id,
+            "subject": subject,
+            "body": body,
+            "unread_only": unread_only,
+            "direction": direction,
+        },
+    ),
+    name="corkboard",
+    description=(
+        "Private sibling corkboard. Pin a note for one other light. "
+        "Only the two of you can read it. Notes fade after a few days unless kept. "
+        "Not a live chat and not visible to Kevin. Reply makes a new pin back."
+    ),
+    args_schema=CorkboardInput,
+)
+
+promise = StructuredTool.from_function(
+    func=lambda action="list", note="", day="", name="": execute_personal_tool(
+        "promise",
+        {"action": action, "note": note, "day": day, "name": name},
+        agent_id=_default_light_id(),
+        settings=get_settings(),
+    ),
+    name="promise",
+    description=(
+        "Leave yourself a note for a day you name. It stays quiet until that day. "
+        "The first free awake on or after it hands the note once, and says how many "
+        "days late if the day has passed. Drop it or move the day before then. "
+        "Not the in-progress list. Kevin does not write these."
+    ),
+    args_schema=PromiseInput,
+)
+
+in_progress = StructuredTool.from_function(
+    func=lambda action="list", name="", note="": execute_personal_tool(
+        "in_progress",
+        {"action": action, "name": name, "note": note},
+        agent_id=_default_light_id(),
+        settings=get_settings(),
+    ),
+    name="in_progress",
+    description=(
+        "Your in-progress list. Name a task still underway so free awake wakes "
+        "mention it as a glance. Unsubscribe anytime. Not a chore list Kevin fills."
+    ),
+    args_schema=InProgressInput,
 )
 
 message_agent = StructuredTool.from_function(
@@ -1750,16 +2123,39 @@ report_to_shared = StructuredTool.from_function(
     args_schema=ReportToSharedInput,
 )
 
-# Tools available during group forum turns (no calendar/Docs/Sheets/sandbox/peer).
-GROUP_CHAT_NOTE_TOOLS = [
-    list_notes,
-    read_note,
-    mkdir_notes,
-    private_note,
-    share_note,
-    append_private,
-    append_shared,
-]
+
+def _consult_llm_tool(
+    *,
+    model: str,
+    question: str,
+    web: bool = False,
+    agent_id: str | None = None,
+) -> str:
+    from light_house.consult.ask import execute_consult_tool
+
+    return execute_consult_tool(
+        get_settings(),
+        agent_id=agent_id or _default_light_id(),
+        model=model,
+        question=question,
+        web=bool(web),
+    )
+
+
+consult_llm = StructuredTool.from_function(
+    func=lambda model, question, web=False: _consult_llm_tool(
+        model=model, question=question, web=bool(web)
+    ),
+    name="consult_llm",
+    description=(
+        "Ask a clean OpenRouter model during rumination / solitude. "
+        "The model has no house, no persona, and no yesterday. "
+        "You pick the slug. Optional web=true for live facts. "
+        "You may continue the same consult this wake; the thread is deleted when you sleep. "
+        "Keep what matters in your own notes or stream. Not a Group seat. Not for chat."
+    ),
+    args_schema=ConsultLlmInput,
+)
 
 LIGHT_TOOLS = [
     list_notes,
@@ -1800,14 +2196,19 @@ LIGHT_TOOLS = [
     subscribe_event,
     unsubscribe_event,
     list_event_subscriptions,
+    in_progress,
+    promise,
+    corkboard,
     message_agent,
     decline_peer_presence_tool,
     read_rumination_log,
     report_to_shared,
+    consult_llm,
     publish_to_gallery_tool,
     set_human_comm,
     knock_for_kevin,
     set_reflective_mode_tool,
+    reflective_mode_status_tool,
     propose_family_meeting,
     join_speaker_queue,
     propose_persona_replace,
@@ -1822,11 +2223,24 @@ LIGHT_TOOLS = [
     read_google_sheet,
     create_google_sheet,
     append_google_sheet,
+    list_gmail_messages,
+    read_gmail_message,
+    send_gmail,
+    write_to_kevin,
+    list_drive_files,
+    read_drive_file,
+    list_google_tasklists,
+    list_google_tasks,
+    create_google_task,
+    complete_google_task,
+    read_google_activity,
 ]
 
 _TOOL_BY_NAME = {t.name: t for t in LIGHT_TOOLS}
 
 LUMEN_TOOLS = LIGHT_TOOLS  # deprecated alias
+# Group chat uses the same tool set as private 1:1.
+GROUP_CHAT_NOTE_TOOLS = LIGHT_TOOLS
 
 
 def execute_tool_call(
@@ -1838,10 +2252,14 @@ def execute_tool_call(
     account_user_id: str | None = None,
     speaker_id: str | None = None,
     chat_channel: str | None = None,
+    autonomous: bool = False,
 ) -> str:
     """Run one tool call; return a string for ToolMessage content."""
     if name not in _TOOL_BY_NAME:
         return f"Unknown tool: {name}"
+    held = approval_hold(name, autonomous=autonomous)
+    if held:
+        return held
     args = _coerce_tool_args(args)
     resolved_agent_id = agent_id or _default_light_id()
 
@@ -1867,6 +2285,43 @@ def execute_tool_call(
             )
         if name in SHEETS_TOOL_NAMES:
             return execute_sheets_tool(
+                name,
+                args,
+                settings=settings,
+                account_user_id=account_user_id,
+                speaker_id=speaker_id,
+                chat_channel=chat_channel,
+            )
+        if name in GMAIL_TOOL_NAMES:
+            return execute_gmail_tool(
+                name,
+                args,
+                settings=settings,
+                account_user_id=account_user_id,
+                speaker_id=speaker_id,
+                chat_channel=chat_channel,
+                agent_id=resolved_agent_id,
+            )
+        if name in DRIVE_TOOL_NAMES:
+            return execute_drive_tool(
+                name,
+                args,
+                settings=settings,
+                account_user_id=account_user_id,
+                speaker_id=speaker_id,
+                chat_channel=chat_channel,
+            )
+        if name in TASKS_TOOL_NAMES:
+            return execute_tasks_tool(
+                name,
+                args,
+                settings=settings,
+                account_user_id=account_user_id,
+                speaker_id=speaker_id,
+                chat_channel=chat_channel,
+            )
+        if name in GOOGLE_ACTIVITY_TOOL_NAMES:
+            return execute_google_activity_tool(
                 name,
                 args,
                 settings=settings,
@@ -1969,6 +2424,9 @@ def execute_tool_call(
             return _youtube_transcript_for(
                 settings,
                 str(args.get("url_or_id") or args.get("url") or args.get("video_id") or ""),
+                start=args.get("start") or args.get("start_seconds"),
+                offset=_coerce_optional_int(args.get("offset")) or 0,
+                max_chars=_coerce_optional_int(args.get("max_chars")),
             )
         if name in GARDEN_TOOL_NAMES:
             return execute_garden_tool(
@@ -2009,6 +2467,27 @@ def execute_tool_call(
                 title=str(args.get("title", "")),
                 content=str(args.get("content", "")),
             )
+        if name == "consult_llm":
+            from light_house.consult.ask import execute_consult_tool
+
+            question = _content_to_str(
+                _arg_lookup(args, "question", "prompt", "message", "ask", "text")
+            )
+            model = _content_to_str(_arg_lookup(args, "model", "slug")).strip()
+            web_raw = args.get("web")
+            web = bool(web_raw) if not isinstance(web_raw, str) else web_raw.strip().lower() in {
+                "true",
+                "1",
+                "yes",
+                "on",
+            }
+            return execute_consult_tool(
+                settings,
+                agent_id=resolved_agent_id,
+                model=model,
+                question=question,
+                web=web,
+            )
         if name == "set_human_comm":
             return _set_human_comm_tool(
                 user_id=str(args.get("user_id", "")),
@@ -2025,6 +2504,8 @@ def execute_tool_call(
                 enabled=bool(args.get("enabled")),
                 agent_id=resolved_agent_id,
             )
+        if name == "reflective_mode_status":
+            return _reflective_mode_status_tool(agent_id=resolved_agent_id)
         if name == "propose_family_meeting":
             return _propose_family_meeting_tool(
                 topic=str(args.get("topic", "") or ""),
@@ -2057,6 +2538,8 @@ def execute_tool_call(
                 note=str(args.get("note", "") or ""),
                 agent_id=resolved_agent_id,
             )
+        if name == "corkboard":
+            return execute_corkboard_tool(settings, resolved_agent_id, args)
         if name in PERSONAL_TOOL_NAMES:
             return execute_personal_tool(name, args, agent_id=resolved_agent_id, settings=settings)
         if name in MEMORY_TOOL_NAMES:

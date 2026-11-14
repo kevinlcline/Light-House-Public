@@ -11,7 +11,12 @@ import pytest
 from light_house.config import Settings
 from light_house.group_chat.history import append_group_round, read_group_round_history
 from light_house.group_chat.round import _parse_decision, run_group_chat_round
-from light_house.group_chat.scene import format_transcript_for_prompt, parse_speak_order
+from light_house.group_chat.scene import (
+    format_transcript_block,
+    format_transcript_for_prompt,
+    parse_speak_order,
+    recent_transcript,
+)
 from light_house.lights.registry import reload_lights_manifest
 from light_house.memory.constants import META_GROUP_CHAT_ROUND_ID, STREAM_SOURCE_GROUP
 from light_house.memory.service import GroupChatLightResponse, MemoryService
@@ -105,6 +110,37 @@ def test_transcript_includes_prior_speech() -> None:
     )
     assert "Kevin: Hello" in text
     assert "Lumen: Hi Kevin" in text
+
+
+def _line(name: str, text: str, ts: float) -> dict:
+    return {
+        "speaker_kind": "human",
+        "speaker_id": name.lower(),
+        "display_name": name,
+        "text": text,
+        "beat": None,
+        "ts": ts,
+    }
+
+
+def test_recent_transcript_keeps_the_tail() -> None:
+    rows = [_line(f"N{i}", f"line {i}", float(i)) for i in range(5)]
+    shown, omitted = recent_transcript(rows, limit=2)
+    assert omitted == 3
+    assert [row["text"] for row in shown] == ["line 3", "line 4"]
+    block, shown_again = format_transcript_block(rows, limit=2, heading="## Live transcript")
+    assert "Showing the last 2 lines" in block
+    assert "3 earlier lines stay stored" in block
+    assert "recall_memory" in block
+    assert "line 0" not in block
+    assert shown_again == shown
+
+
+def test_recent_transcript_limit_zero_keeps_the_sitting() -> None:
+    rows = [_line("Kevin", "Hello", 1.0)]
+    shown, omitted = recent_transcript(rows, limit=0)
+    assert omitted == 0
+    assert shown == rows
 
 
 def test_sequential_scene_ara_hears_lumen(tmp_path: Path) -> None:

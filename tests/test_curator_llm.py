@@ -27,8 +27,10 @@ def test_build_curator_chat_model_uses_openrouter_when_configured():
         MEMORY_CURATOR_MODEL="openrouter/free",
         OPENROUTER_API_KEY="sk-test",
         OPENROUTER_BASE_URL="https://openrouter.ai/api/v1",
+        OPENROUTER_IGNORED_PROVIDERS="coreweave",
     )
     model = build_curator_chat_model(settings)
     assert isinstance(model, ChatOpenAI)
     assert model.model_name == "openrouter/free"
+    assert model.extra_body == {"provider": {"ignore": ["coreweave"]}}
     assert settings.memory_curator_provider == LLMProvider.OPENROUTER

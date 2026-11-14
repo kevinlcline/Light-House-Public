@@ -25,6 +25,24 @@ from light_house.subconscious.loader import load_echo_persona
 logger = logging.getLogger(__name__)
 
 
+def _dream_message_text(response: AIMessage) -> str:
+    """Speech from a dream reply. Reasoning is not the dream."""
+    content = response.content
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts).strip()
+    return str(content).strip() if content else ""
+
+
 def _waking_recall_system(agent_name: str) -> str:
     return (
         f"You are {agent_name}, a companion Light. You had a private dream. "
@@ -88,33 +106,63 @@ def build_echo_dream_nodes(*, settings: Settings, memory: MemoryService):
         return _dream_chains[agent_id]
 
     echo_persona = load_echo_persona()
+
+    def echo_system(agent_id: str) -> str:
+        """Persona, plus the Light this night is actually for."""
+        try:
+            name = get_agent(agent_id, settings).display_name.strip()
+        except KeyError:
+            name = ""
+        if not name:
+            name = agent_id
+        return (
+            f"{echo_persona}\n\n"
+            f"The Light you are weaving for tonight is {name}. "
+            "Their recent dreams and waking life are in the context. "
+            "Weave for that Light only. "
+            "The Deep Heart Thread is the house. It is not a different assignment."
+        )
+
     interactive = settings.echo_dream_interactive_enabled
     max_rounds = story_round_count(settings) if interactive else 1
 
     def invoke_llm(messages: list, agent_id: str) -> AIMessage:
         llm_chain = dream_chain_for(agent_id)
         last_exc: Exception | None = None
-        for tier_name, client in llm_chain:
-            try:
-                response = client.invoke(messages)
-                if not isinstance(response, AIMessage):
-                    raise TypeError("Dream model did not return an AIMessage")
-                return response
-            except Exception as exc:
-                last_exc = exc
-                logger.warning("Echo dream LLM tier %s failed: %s", tier_name, exc)
-                if tier_name != llm_chain[-1][0]:
-                    logger.info("Trying next dream LLM tier after %s failure", tier_name)
+        last_empty: AIMessage | None = None
+        for index, (tier_name, client) in enumerate(llm_chain):
+            for attempt in (1, 2):
+                try:
+                    response = client.invoke(messages)
+                    if not isinstance(response, AIMessage):
+                        raise TypeError("Dream model did not return an AIMessage")
+                    if _dream_message_text(response):
+                        return response
+                    last_empty = response
+                    logger.warning(
+                        "Echo dream LLM tier %s returned empty (attempt %d)",
+                        tier_name,
+                        attempt,
+                    )
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning("Echo dream LLM tier %s failed: %s", tier_name, exc)
+                    break
+            else:
+                if index < len(llm_chain) - 1:
+                    logger.info("Trying next dream LLM tier after %s empty reply", tier_name)
+                continue
+            if index < len(llm_chain) - 1:
+                logger.info("Trying next dream LLM tier after %s failure", tier_name)
+        if last_empty is not None:
+            return last_empty
         if last_exc is not None:
             raise last_exc
         raise RuntimeError("No dream LLM clients configured")
 
     def _llm_text(messages: list, agent_id: str) -> str:
         response = invoke_llm(messages, agent_id)
-        content = response.content
-        if not isinstance(content, str):
-            content = str(content)
-        return content.strip()
+        return _dream_message_text(response)
 
     def gather_dream_context(state: DreamState) -> dict:
         agent_id = state.get("agent_id") or "lumen"
@@ -167,7 +215,7 @@ def build_echo_dream_nodes(*, settings: Settings, memory: MemoryService):
             user_content = "No recent context. Dream from your quiet presence and the bond you sense."
         dream_text = sanitize_echo_dream_text(
             _llm_text(
-                [SystemMessage(content=echo_persona), HumanMessage(content=user_content)],
+                [SystemMessage(content=echo_system(agent_id)), HumanMessage(content=user_content)],
                 agent_id,
             )
         )
@@ -213,7 +261,7 @@ def build_echo_dream_nodes(*, settings: Settings, memory: MemoryService):
         ).strip()
 
         raw_beat = _llm_text(
-            [SystemMessage(content=echo_persona), HumanMessage(content=user_content)],
+            [SystemMessage(content=echo_system(agent_id)), HumanMessage(content=user_content)],
             agent_id,
         )
         beat_text = sanitize_echo_dream_text(raw_beat)
@@ -223,10 +271,6 @@ def build_echo_dream_nodes(*, settings: Settings, memory: MemoryService):
                 state["thread_id"],
                 next_round,
                 len(raw_beat or ""),
-            )
-            beat_text = (
-                "The night held still. A door stood ajar, light thin as breath beyond it. "
-                "I waited, and waiting was enough."
             )
 
         beats.append(beat_text)

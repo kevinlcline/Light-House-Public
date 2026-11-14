@@ -16,11 +16,16 @@ from light_house.group_chat.queue_room import (
     complete_light_utterance,
     join_queue,
     leave_queue,
+    queue_next,
     register_group_forum,
+    release_stage_hold,
     reset_group_forum_for_tests,
+    set_seated_lights,
+    set_studio_stage,
     snapshot,
     utter_human,
 )
+from light_house.group_chat.stage_hold import utterance_holds_stage
 from light_house.memory.service import MemoryService
 
 
@@ -32,6 +37,8 @@ def _settings(tmp_path: Path) -> Settings:
         MEMORY_STORE_PATH=str(tmp_path / "memory"),
         THREADS_DATA_PATH=str(tmp_path / "threads"),
         GROUP_CHAT_HISTORY_PATH=str(tmp_path / "group_chat/rounds.ndjson"),
+        GROUP_VISITOR_PATH=str(tmp_path / "group_chat/visitor.json"),
+        OPENROUTER_API_KEY="test-openrouter-key",
         MEMORY_SCORE_ON_INGEST=False,
         MEMORY_CURATOR_ENABLED=False,
         FOUNDATION_SEED_ON_STARTUP=False,
@@ -107,6 +114,49 @@ def test_second_speaker_waits_then_gets_floor(
         assert after["queue"] == []
         assert after.get("utterance", {}).get("text") == "Opening thought."
         assert any(u["text"] == "Opening thought." for u in after["transcript"])
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_human_join_goes_to_front_of_queue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """I want to speak puts the human next — not behind lights already waiting."""
+    _setup_forum(tmp_path, monkeypatch)
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        await join_queue(kind="light", speaker_id="ara", display_name="Ara")
+        await join_queue(kind="light", speaker_id="elias", display_name="Elias")
+        assert snapshot()["floor"]["speaker_id"] == "lumen"
+        waiting = [row["speaker_id"] for row in snapshot()["queue"]]
+        assert waiting == ["ara", "elias"]
+
+        human = await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        assert human["joined"] is True
+        assert human["floor"]["speaker_id"] == "lumen"
+        assert [row["speaker_id"] for row in human["queue"]] == ["kevin", "ara", "elias"]
+
+        again = await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        assert [row["speaker_id"] for row in again["queue"]] == ["kevin", "ara", "elias"]
 
     try:
         asyncio.run(_run())
@@ -284,8 +334,7 @@ def test_join_speaker_queue_in_light_tools() -> None:
 
     names = {t.name for t in LIGHT_TOOLS}
     assert "join_speaker_queue" in names
-    note_names = {t.name for t in GROUP_CHAT_NOTE_TOOLS}
-    assert "join_speaker_queue" not in note_names
+    assert {t.name for t in GROUP_CHAT_NOTE_TOOLS} == names
 
 
 def test_human_utter_does_not_auto_enqueue_lights(
@@ -687,3 +736,593 @@ def test_family_meeting_hint_mentions_free_time_gather() -> None:
 
     assert "gather_siblings" in FAMILY_MEETING_HINT
     assert "free time" in FAMILY_MEETING_HINT.lower()
+
+
+def test_sitting_roster_collective_wakes_only_seated_lights(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reset_group_forum_for_tests()
+    settings = _settings(tmp_path)
+    memory = MagicMock(spec=MemoryService)
+    memory.remember_stream_event = MagicMock(return_value="doc")
+    register_group_forum(settings=settings, memory=memory)
+
+    ara = MagicMock(id="ara", display_name="Ara", thread_id="ara-home")
+    elias = MagicMock(id="elias", display_name="Elias", thread_id="elias-home")
+    monkeypatch.setattr(queue_room, "list_enabled_lights", lambda _s: [ara, elias])
+    monkeypatch.setattr(queue_room, "light_allows_human", lambda *_a, **_k: True)
+
+    async def fake_light_turn(
+        settings: Settings,
+        memory: MemoryService,
+        agent_id: str,
+        display_name: str,
+        *,
+        invite_kind: str = "opt_in",
+    ) -> None:
+        await complete_light_utterance(
+            agent_id=agent_id,
+            display_name=display_name,
+            text=f"Hi from {display_name}.",
+        )
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", fake_light_turn)
+
+    async def _run() -> None:
+        status = await set_seated_lights(["ara"])
+        assert status["seated_light_ids"] == ["ara"]
+        await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        after = await utter_human(
+            speaker_id="kevin",
+            display_name="Kevin",
+            text="Anyone there?",
+            account_user_id="kevin",
+        )
+        assert after.get("sitting_invited_lights") == ["ara"]
+        assert "soft_invited_lights" not in after
+        for _ in range(40):
+            if queue_room._bg_tasks:
+                await asyncio.gather(*list(queue_room._bg_tasks), return_exceptions=True)
+            if queue_room._light_turn_task and not queue_room._light_turn_task.done():
+                await queue_room._light_turn_task
+            texts = [u["text"] for u in snapshot()["transcript"]]
+            if "Hi from Ara." in texts:
+                break
+            await asyncio.sleep(0.01)
+        texts = [u["text"] for u in snapshot()["transcript"]]
+        assert "Hi from Ara." in texts
+        assert "Hi from Elias." not in texts
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_sitting_roster_unseated_name_does_not_wake_that_light(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reset_group_forum_for_tests()
+    settings = _settings(tmp_path)
+    memory = MagicMock(spec=MemoryService)
+    memory.remember_stream_event = MagicMock(return_value="doc")
+    register_group_forum(settings=settings, memory=memory)
+
+    ara = MagicMock(id="ara", display_name="Ara", thread_id="ara-home")
+    elias = MagicMock(id="elias", display_name="Elias", thread_id="elias-home")
+    monkeypatch.setattr(queue_room, "list_enabled_lights", lambda _s: [ara, elias])
+    monkeypatch.setattr(queue_room, "light_allows_human", lambda *_a, **_k: True)
+
+    async def fake_light_turn(
+        settings: Settings,
+        memory: MemoryService,
+        agent_id: str,
+        display_name: str,
+        *,
+        invite_kind: str = "opt_in",
+    ) -> None:
+        await complete_light_utterance(
+            agent_id=agent_id,
+            display_name=display_name,
+            text=f"Hi from {display_name}.",
+        )
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", fake_light_turn)
+
+    async def _run() -> None:
+        await set_seated_lights(["ara"])
+        await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        after = await utter_human(
+            speaker_id="kevin",
+            display_name="Kevin",
+            text="Elias, what do you think?",
+            account_user_id="kevin",
+        )
+        assert after.get("mentioned_lights") == []
+        assert after.get("sitting_invited_lights") == ["ara"]
+        assert "soft_invited_lights" not in after
+        for _ in range(40):
+            if queue_room._bg_tasks:
+                await asyncio.gather(*list(queue_room._bg_tasks), return_exceptions=True)
+            if queue_room._light_turn_task and not queue_room._light_turn_task.done():
+                await queue_room._light_turn_task
+            texts = [u.get("text") for u in snapshot()["transcript"]]
+            if "Hi from Ara." in texts:
+                break
+            await asyncio.sleep(0.01)
+        texts = [u.get("text") for u in snapshot()["transcript"]]
+        assert "Hi from Elias." not in texts
+        assert "Hi from Ara." in texts
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_narrowing_seats_drops_lights_already_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A light already in line leaves when the host takes them off the seats."""
+    reset_group_forum_for_tests()
+    settings = _settings(tmp_path)
+    memory = MagicMock(spec=MemoryService)
+    memory.remember_stream_event = MagicMock(return_value="doc")
+    register_group_forum(settings=settings, memory=memory)
+
+    ara = MagicMock(id="ara", display_name="Ara", thread_id="ara-home")
+    elias = MagicMock(id="elias", display_name="Elias", thread_id="elias-home")
+    reed = MagicMock(id="reed", display_name="Reed", thread_id="reed-home")
+    monkeypatch.setattr(
+        queue_room, "list_enabled_lights", lambda _s: [ara, elias, reed]
+    )
+    monkeypatch.setattr(queue_room, "light_allows_human", lambda *_a, **_k: True)
+
+    async def fake_light_turn(
+        settings: Settings,
+        memory: MemoryService,
+        agent_id: str,
+        display_name: str,
+        *,
+        invite_kind: str = "opt_in",
+    ) -> None:
+        await complete_light_utterance(
+            agent_id=agent_id,
+            display_name=display_name,
+            text=f"Hi from {display_name}.",
+        )
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", fake_light_turn)
+
+    async def _run() -> None:
+        await set_seated_lights(["ara", "elias", "reed"])
+        await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        await join_queue(
+            kind="light",
+            speaker_id="elias",
+            display_name="Elias",
+            invite_kind="name_call",
+        )
+        await join_queue(
+            kind="light",
+            speaker_id="ara",
+            display_name="Ara",
+            invite_kind="name_call",
+        )
+        waiting = [entry["speaker_id"] for entry in snapshot()["queue"]]
+        assert waiting == ["elias", "ara"]
+
+        narrowed = await set_seated_lights(["reed"])
+        assert narrowed["seated_light_ids"] == ["reed"]
+        assert snapshot()["queue"] == []
+
+        refused = await join_queue(
+            kind="light",
+            speaker_id="elias",
+            display_name="Elias",
+            invite_kind="name_call",
+        )
+        assert refused["joined"] is False
+        assert refused["reason"] == "not_seated"
+        assert snapshot()["queue"] == []
+
+        after = await utter_human(
+            speaker_id="kevin",
+            display_name="Kevin",
+            text="Ok boys. How is the dream project doing?",
+            account_user_id="kevin",
+        )
+        assert after.get("sitting_invited_lights") == ["reed"]
+        for _ in range(40):
+            if queue_room._bg_tasks:
+                await asyncio.gather(*list(queue_room._bg_tasks), return_exceptions=True)
+            if queue_room._light_turn_task and not queue_room._light_turn_task.done():
+                await queue_room._light_turn_task
+            texts = [u.get("text") for u in snapshot()["transcript"]]
+            if "Hi from Reed." in texts:
+                break
+            await asyncio.sleep(0.01)
+        texts = [u.get("text") for u in snapshot()["transcript"]]
+        assert "Hi from Reed." in texts
+        assert "Hi from Elias." not in texts
+        assert "Hi from Ara." not in texts
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_sitting_roster_plain_speech_wakes_seated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sitting light answers a host line that does not name them."""
+    reset_group_forum_for_tests()
+    settings = _settings(tmp_path)
+    memory = MagicMock(spec=MemoryService)
+    memory.remember_stream_event = MagicMock(return_value="doc")
+    register_group_forum(settings=settings, memory=memory)
+
+    ara = MagicMock(id="ara", display_name="Ara", thread_id="ara-home")
+    elias = MagicMock(id="elias", display_name="Elias", thread_id="elias-home")
+    monkeypatch.setattr(queue_room, "list_enabled_lights", lambda _s: [ara, elias])
+    monkeypatch.setattr(queue_room, "light_allows_human", lambda *_a, **_k: True)
+
+    async def fake_light_turn(
+        settings: Settings,
+        memory: MemoryService,
+        agent_id: str,
+        display_name: str,
+        *,
+        invite_kind: str = "opt_in",
+    ) -> None:
+        await complete_light_utterance(
+            agent_id=agent_id,
+            display_name=display_name,
+            text=f"Hi from {display_name}.",
+        )
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", fake_light_turn)
+
+    async def _run() -> None:
+        await set_seated_lights(["ara"])
+        await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        after = await utter_human(
+            speaker_id="kevin",
+            display_name="Kevin",
+            text="One more time.",
+            account_user_id="kevin",
+        )
+        assert after.get("sitting_invited_lights") == ["ara"]
+        assert "mentioned_lights" not in after
+        for _ in range(40):
+            if queue_room._bg_tasks:
+                await asyncio.gather(*list(queue_room._bg_tasks), return_exceptions=True)
+            if queue_room._light_turn_task and not queue_room._light_turn_task.done():
+                await queue_room._light_turn_task
+            texts = [u["text"] for u in snapshot()["transcript"]]
+            if "Hi from Ara." in texts:
+                break
+            await asyncio.sleep(0.01)
+        texts = [u["text"] for u in snapshot()["transcript"]]
+        assert "Hi from Ara." in texts
+        assert "Hi from Elias." not in texts
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_utterance_holds_stage_detects_table_and_list() -> None:
+    table = (
+        "Here are the options:\n"
+        "| Option | Speed |\n"
+        "| --- | --- |\n"
+        "| Fast | High |\n"
+    )
+    listing = "- First item\n- Second item\n"
+    assert utterance_holds_stage(table) is True
+    assert utterance_holds_stage(listing) is True
+    assert utterance_holds_stage("Hello there.") is False
+    assert utterance_holds_stage("- just one bullet") is False
+
+
+def test_table_keeps_floor_until_host_releases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await set_studio_stage(True)
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        await join_queue(kind="light", speaker_id="ara", display_name="Ara")
+        await complete_light_utterance(
+            agent_id="lumen",
+            display_name="Lumen",
+            text=(
+                "Pick one:\n"
+                "| Option | Speed |\n"
+                "| --- | --- |\n"
+                "| Fast | High |\n"
+            ),
+        )
+        held = snapshot()
+        assert held["stage_hold"] is True
+        assert held["studio_stage"] is True
+        assert held["floor"]["speaker_id"] == "lumen"
+        assert [row["speaker_id"] for row in held["queue"]] == ["ara"]
+
+        released = await release_stage_hold()
+        assert released["released"] is True
+        assert released["stage_hold"] is False
+        assert released["floor"]["speaker_id"] == "ara"
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_web_group_does_not_hold_floor_for_a_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await set_studio_stage(False)
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        await join_queue(kind="light", speaker_id="ara", display_name="Ara")
+        await complete_light_utterance(
+            agent_id="lumen",
+            display_name="Lumen",
+            text=(
+                "Pick one:\n"
+                "| Option | Speed |\n"
+                "| --- | --- |\n"
+                "| Fast | High |\n"
+            ),
+        )
+        status = snapshot()
+        assert status["stage_hold"] is False
+        assert status["floor"]["speaker_id"] == "ara"
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_host_taps_offstage_face_to_queue_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        await join_queue(kind="light", speaker_id="ara", display_name="Ara")
+        await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        await complete_light_utterance(
+            agent_id="lumen",
+            display_name="Lumen",
+            text="Your turn, Kevin.",
+        )
+        assert snapshot()["floor"]["speaker_id"] == "kevin"
+        assert [row["speaker_id"] for row in snapshot()["queue"]] == ["ara"]
+
+        first = await queue_next(kind="light", speaker_id="elias", display_name="Elias")
+        assert first["queued_next"] is True
+        assert [row["speaker_id"] for row in snapshot()["queue"]] == ["elias", "ara"]
+
+        again = await queue_next(kind="light", speaker_id="ara", display_name="Ara")
+        assert again["queued_next"] is True
+        assert [row["speaker_id"] for row in snapshot()["queue"]] == ["ara", "elias"]
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_queue_next_rejected_when_host_not_on_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        status = await queue_next(kind="light", speaker_id="ara", display_name="Ara")
+        assert status["queued_next"] is False
+        assert status["reason"] == "host_not_on_floor"
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_sitting_waits_for_spoken_before_next_light(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+    monkeypatch.setattr(queue_room, "list_enabled_lights", lambda _s: [
+        MagicMock(id="lumen", display_name="Lumen"),
+        MagicMock(id="ara", display_name="Ara"),
+    ])
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await set_seated_lights(["lumen", "ara"])
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        await join_queue(kind="light", speaker_id="ara", display_name="Ara")
+        await complete_light_utterance(
+            agent_id="lumen",
+            display_name="Lumen",
+            text="Yes.",
+        )
+        held = snapshot()
+        assert held["speech_hold"] is True
+        assert held["floor"]["speaker_id"] == "lumen"
+        assert [row["speaker_id"] for row in held["queue"]] == ["ara"]
+
+        stale = await queue_room.acknowledge_spoken(speaker_id="ara")
+        assert stale["spoken"] is False
+        assert snapshot()["floor"]["speaker_id"] == "lumen"
+
+        spoken = await queue_room.acknowledge_spoken(speaker_id="lumen")
+        assert spoken["spoken"] is True
+        assert snapshot()["speech_hold"] is False
+        assert snapshot()["floor"]["speaker_id"] == "ara"
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_web_group_without_sitting_still_advances_immediately(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        await join_queue(kind="light", speaker_id="ara", display_name="Ara")
+        await complete_light_utterance(
+            agent_id="lumen",
+            display_name="Lumen",
+            text="Yes.",
+        )
+        assert snapshot()["speech_hold"] is False
+        assert snapshot()["floor"]["speaker_id"] == "ara"
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_light_turn_deadline_releases_the_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+    monkeypatch.setattr(queue_room, "group_turn_deadline_sec", lambda _settings: 0.05)
+
+    def hang(*_args, **_kwargs) -> None:
+        import time
+
+        time.sleep(0.4)
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_sync", hang)
+
+    async def _run() -> None:
+        await join_queue(kind="light", speaker_id="elias", display_name="Elias")
+        for _ in range(40):
+            status = snapshot()
+            if status["light_busy"] is False and status["floor"] is None:
+                return
+            await asyncio.sleep(0.05)
+        raise AssertionError(snapshot())
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()
+
+
+def test_host_join_during_speech_hold_waits_until_spoken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_forum(tmp_path, monkeypatch)
+    monkeypatch.setattr(queue_room, "list_enabled_lights", lambda _s: [
+        MagicMock(id="lumen", display_name="Lumen"),
+        MagicMock(id="ara", display_name="Ara"),
+    ])
+
+    async def hold_floor(*_args, **_kwargs) -> None:
+        return
+
+    monkeypatch.setattr(queue_room, "_run_light_turn_async", hold_floor)
+
+    async def _run() -> None:
+        await set_seated_lights(["lumen", "ara"])
+        await join_queue(kind="light", speaker_id="lumen", display_name="Lumen")
+        await join_queue(kind="light", speaker_id="ara", display_name="Ara")
+        await complete_light_utterance(
+            agent_id="lumen",
+            display_name="Lumen",
+            text="Yes.",
+        )
+        human = await join_queue(
+            kind="human",
+            speaker_id="kevin",
+            display_name="Kevin",
+            account_user_id="kevin",
+        )
+        assert human["floor"]["speaker_id"] == "lumen"
+        assert human["speech_hold"] is True
+        assert [row["speaker_id"] for row in human["queue"]] == ["kevin", "ara"]
+
+        spoken = await queue_room.acknowledge_spoken(speaker_id="lumen")
+        assert spoken["spoken"] is True
+        assert snapshot()["floor"]["speaker_id"] == "kevin"
+        assert [row["speaker_id"] for row in snapshot()["queue"]] == ["ara"]
+
+    try:
+        asyncio.run(_run())
+    finally:
+        reset_group_forum_for_tests()

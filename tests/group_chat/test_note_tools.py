@@ -11,10 +11,12 @@ from light_house.group_chat.note_tools import run_group_note_tool_rounds
 from light_house.group_chat.prompts import GROUP_CHAT_TASK_HINT
 
 
-def test_group_prompt_mentions_note_tools() -> None:
+def test_group_prompt_offers_full_tools() -> None:
     assert "list_notes" in GROUP_CHAT_TASK_HINT
     assert "read_note" in GROUP_CHAT_TASK_HINT
+    assert "same tools as private 1:1" in GROUP_CHAT_TASK_HINT
     assert "Calendar" in GROUP_CHAT_TASK_HINT
+    assert "guest" in GROUP_CHAT_TASK_HINT.lower()
 
 
 def test_run_group_note_tool_rounds_reads_then_speaks() -> None:
@@ -23,7 +25,10 @@ def test_run_group_note_tool_rounds_reads_then_speaks() -> None:
 
     class FakeClient:
         def bind_tools(self, tools):
-            assert any(getattr(t, "name", None) == "read_note" for t in tools)
+            names = {getattr(t, "name", None) for t in tools}
+            assert "read_note" in names
+            assert "web_search" in names
+            assert "list_calendar_events" in names
             return self
 
         def invoke(self, messages):
@@ -62,10 +67,15 @@ def test_run_group_note_tool_rounds_reads_then_speaks() -> None:
             llm_chain=[("mock", FakeClient())],
             messages=messages,
             agent_id="lumen",
+            account_user_id="kevin",
+            speaker_id="kevin",
         )
     assert "gallery" in raw
     assert calls["n"] == 2
     assert run_tools.called
+    assert run_tools.call_args.kwargs["account_user_id"] == "kevin"
+    assert run_tools.call_args.kwargs["speaker_id"] == "kevin"
+    assert run_tools.call_args.kwargs["chat_channel"] == "group"
 
 
 def test_run_group_note_tool_rounds_plain_when_zero_cap() -> None:

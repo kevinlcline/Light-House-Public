@@ -40,6 +40,9 @@ _DEFAULT_BY_LIGHT: dict[str, str] = {
     "lumen": "af_sarah",
     "ara": "af_bella",
     "elias": "am_michael",
+    "unnamed": "am_liam",
+    "reed": "am_adam",
+    "visitor": "am_fenrir",
 }
 
 _FALLBACK_VOICE = "af_sarah"

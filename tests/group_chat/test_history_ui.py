@@ -90,6 +90,10 @@ def test_load_transcript_merges_durable_and_live(tmp_path: Path) -> None:
     rows = load_transcript_for_ui(settings, limit=20)
     texts = [r["text"] for r in rows]
     assert texts == ["older durable", "live start", "durable after live start"]
+    ara = next(r for r in rows if r["text"] == "durable after live start")
+    assert ara["speaker_kind"] == "light"
+    assert ara["speaker_id"] == "ara"
+    assert ara["agent_id"] == "ara"
     reset_group_forum_for_tests()
 
 

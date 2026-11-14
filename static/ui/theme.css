@@ -32,8 +32,12 @@
     --bubble-ara-text: #efe8f4;
     --bubble-elias: #2a4038;
     --bubble-elias-text: #e6f0ec;
+    --bubble-unnamed: #2a3844;
+    --bubble-unnamed-text: #e4edf3;
     --bubble-echo: #353045;
     --bubble-echo-text: #eceaf0;
+    --bubble-visitor: #2c3640;
+    --bubble-visitor-text: #d7dee6;
     --bubble-assistant: #333;
     --bubble-assistant-text: #e0e0e0;
     --bubble-peer: #2a3544;
@@ -81,8 +85,12 @@
     --bubble-ara-text: #4a148c;
     --bubble-elias: #e0f2f1;
     --bubble-elias-text: #004d40;
+    --bubble-unnamed: #e3eef5;
+    --bubble-unnamed-text: #1a3344;
     --bubble-echo: #eceff1;
     --bubble-echo-text: #37474f;
+    --bubble-visitor: #dbe3ea;
+    --bubble-visitor-text: #1c2833;
     --bubble-assistant: #e8e8ec;
     --bubble-assistant-text: #1a1a1a;
     --bubble-peer: #e3eaf2;

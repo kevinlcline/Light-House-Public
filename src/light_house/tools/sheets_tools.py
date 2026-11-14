@@ -1,4 +1,4 @@
-"""Per-human Google Sheets tools — private 1:1 only, same Google connect as Docs."""
+"""Per-human Google Sheets tools — 1:1 or Group, same Google connect as Docs."""
 
 from __future__ import annotations
 
@@ -473,8 +473,9 @@ def build_sheets_tools() -> list[StructuredTool]:
         StructuredTool.from_function(
             name="list_google_sheets",
             description=(
-                "List the signed-in human's Google Sheets (private 1:1 only; not group; "
-                "not guests). Optional title query."
+                "List the signed-in human's Google Sheets "
+                "(1:1 or Group as that human; not guests or the visitor). "
+                "Optional title query."
             ),
             func=lambda query="", max_sheets=10: (
                 "FAILED: list_google_sheets must run through the agent tool runner"
@@ -485,7 +486,7 @@ def build_sheets_tools() -> list[StructuredTool]:
             name="read_google_sheet",
             description=(
                 "Read cells from a Google Sheet by id/URL and optional A1 range "
-                "(private 1:1 only; not group; not guests). Returns TSV text."
+                "(1:1 or Group as that human; not guests or the visitor). Returns TSV text."
             ),
             func=lambda spreadsheet_id_or_url, **_kwargs: (
                 "FAILED: read_google_sheet must run through the agent tool runner"
@@ -496,7 +497,7 @@ def build_sheets_tools() -> list[StructuredTool]:
             name="create_google_sheet",
             description=(
                 "Create a Google Sheet with a title and optional header/rows CSV "
-                "(private 1:1 only; not group; not guests)."
+                "(1:1 or Group as that human; not guests or the visitor)."
             ),
             func=lambda title, headers="", rows_csv="": (
                 "FAILED: create_google_sheet must run through the agent tool runner"
@@ -507,7 +508,7 @@ def build_sheets_tools() -> list[StructuredTool]:
             name="append_google_sheet",
             description=(
                 "Append CSV rows to a Google Sheet "
-                "(private 1:1 only; not group; not guests)."
+                "(1:1 or Group as that human; not guests or the visitor)."
             ),
             func=lambda spreadsheet_id_or_url, rows_csv, **_kwargs: (
                 "FAILED: append_google_sheet must run through the agent tool runner"

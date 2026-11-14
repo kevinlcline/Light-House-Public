@@ -13,6 +13,7 @@ from light_house.agent.rumination_internal import (
     rumination_internal_state_defaults,
     should_continue_internal_loop,
 )
+from light_house.agent.checkpoint import checkpoint_finalize_hint, checkpoint_prompt
 from light_house.agent.rumination_state import RuminationState
 from light_house.agent.post_chat_wake import WAKE_KIND_POST_CHAT
 from light_house.agent.maintenance_wake import WAKE_KIND_MEMORY_MAINTENANCE
@@ -24,7 +25,9 @@ from light_house.personal.awake_rhythm import (
     counts_as_felt_cycle,
 )
 from light_house.agent.tool_helpers import (
+    AUTONOMOUS_GATE_HINT,
     CODEBASE_SYSTEM_HINT,
+    GOOGLE_HOUSE_HINT,
     HUMAN_COMM_HINT,
     FAMILY_MEETING_HINT,
     GALLERY_HINT,
@@ -36,7 +39,11 @@ from light_house.agent.tool_helpers import (
     GARDEN_SYSTEM_HINT,
     NOTES_SYSTEM_HINT,
     PERSONAL_DB_HINT,
+    CORKBOARD_HINT,
+    IN_PROGRESS_HINT,
+    PROMISE_HINT,
     RUMINATION_LOG_HINT,
+    CONSULT_LLM_HINT,
     SANDBOX_SYSTEM_HINT,
     SUBSCRIPTION_HINT,
     WEB_SYSTEM_HINT,
@@ -47,7 +54,8 @@ from light_house.agent.tool_helpers import (
     latest_assistant_text,
     run_tool_calls,
 )
-from light_house.agents.registry import get_agent, list_agents, load_persona
+from light_house.agents.registry import build_base_system, get_agent, list_agents
+from light_house.tools.approval_gate import wake_is_unattended
 from light_house.config import Settings
 from light_house.llm.factory import build_inner_life_llm_chain
 from light_house.llm.profile import lookup_agent_llm_profile
@@ -63,7 +71,6 @@ from light_house.memory.context_builder import (
     RUMINATION_MAINTENANCE_SEED,
     RUMINATION_MEDITATION_FINALIZE_HINT,
     RUMINATION_MEDITATION_HINT,
-    RUMINATION_MEDITATION_SEED,
     RUMINATION_SEED_MESSAGE,
     RUMINATION_TASK_HINT,
     MAILBOX_WAKE_FINALIZE_HINT,
@@ -72,12 +79,16 @@ from light_house.memory.context_builder import (
     SHARED_NOTE_WAKE_FINALIZE_HINT,
     SHARED_NOTE_WAKE_HINT,
     SHARED_NOTE_WAKE_SEED,
+    QUIET_CHAT_CALENDAR_DAYS,
     build_agent_context,
     format_agent_context_markdown,
     format_unscored_memory_nudge,
     format_felt_cycles_finalize_nudge,
 )
 from light_house.memory.service import MemoryService, _first_sentence_short
+from light_house.personal.corkboard import format_unread_glance
+from light_house.personal.in_progress import format_in_progress_free_wake_for_agent
+from light_house.personal.promise import hand_due_promises_for_agent
 from light_house.personal.time_sense import increment_felt_cycles, read_inner_time
 from light_house.report_back import report_back_enabled
 from light_house.inner_life_trace import (
@@ -150,13 +161,15 @@ def build_rumination_system_content(
 ) -> str:
     """Full system prompt body sent to the model during ruminate (for trace + preview)."""
     loop_hint = INTERNAL_LOOP_TASK_HINT if internal_loop else ""
+    gate = "" if wake_kind == WAKE_KIND_MEDITATION else AUTONOMOUS_GATE_HINT
     return (
-        load_persona(agent_id)
+        build_base_system(agent_id)
         + context_md
         + peer_section
         + _rumination_task_hint(wake_kind)
         + loop_hint
         + tool_hints
+        + gate
     )
 
 
@@ -200,9 +213,13 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
         + GARDEN_SYSTEM_HINT
         + GARDEN_RUMINATION_HINT
         + PERSONAL_DB_HINT
+        + IN_PROGRESS_HINT
+        + PROMISE_HINT
+        + CORKBOARD_HINT
         + SANDBOX_SYSTEM_HINT
         + CODEBASE_SYSTEM_HINT
         + WEB_SYSTEM_HINT
+        + GOOGLE_HOUSE_HINT
         + peer_hint
         + HUMAN_COMM_HINT
         + PRESENCE_KNOCK_HINT
@@ -213,6 +230,8 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
     )
     if settings.rumination_log_enabled:
         tool_hints += RUMINATION_LOG_HINT
+    if settings.consult_clean_llm_enabled:
+        tool_hints += CONSULT_LLM_HINT
 
     def _agent_tool_hints(
         agent_id: str,
@@ -242,7 +261,9 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
                 response = client.invoke(messages)
                 if not isinstance(response, AIMessage):
                     raise TypeError("Inner-life model did not return an AIMessage")
-                return response
+                from light_house.agent.tool_helpers import normalize_model_message
+
+                return normalize_model_message(response, recover_tools=False)
             except Exception as exc:
                 last_exc = exc
                 logger.warning("Inner-life LLM tier %s failed: %s", tier_name, exc)
@@ -259,14 +280,30 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
         felt_cycles_incremented: int | None = None
         if counts_as_felt_cycle(wake_kind):
             felt_cycles_incremented = increment_felt_cycles(settings, agent_id)
+        maintenance = wake_kind in (WAKE_KIND_MEMORY_MAINTENANCE, WAKE_KIND_CHORES)
         bundle = build_agent_context(
             memory,
             thread_id=thread_id,
             agent_id=agent_id,
             stream_max_chars=settings.memory_target_context_chars,
             stream_mode="rumination",
+            chat_calendar_days=QUIET_CHAT_CALENDAR_DAYS,
+            retain_unscored=maintenance,
         )
         context_md = format_agent_context_markdown(bundle)
+        in_progress_md = format_in_progress_free_wake_for_agent(
+            settings, agent_id, wake_kind=wake_kind
+        )
+        if in_progress_md:
+            context_md += "\n\n" + in_progress_md
+        promise_md = hand_due_promises_for_agent(
+            settings, agent_id, wake_kind=wake_kind
+        )
+        if promise_md:
+            context_md += "\n\n" + promise_md
+        corkboard_md = format_unread_glance(settings, agent_id)
+        if corkboard_md:
+            context_md += "\n\n" + corkboard_md
         if wake_kind not in (
             WAKE_KIND_KEVIN_SHARED_NOTE,
             WAKE_KIND_MAILBOX_LETTER,
@@ -360,7 +397,9 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
             if wake_kind in (WAKE_KIND_MEMORY_MAINTENANCE, WAKE_KIND_CHORES):
                 seed = [HumanMessage(content=RUMINATION_MAINTENANCE_SEED)]
             elif wake_kind == WAKE_KIND_MEDITATION:
-                seed = [HumanMessage(content=RUMINATION_MEDITATION_SEED)]
+                from light_house.personal.meditation_return import meditation_opening
+
+                seed = [HumanMessage(content=meditation_opening(settings, agent_id))]
             elif wake_kind == WAKE_KIND_KEVIN_SHARED_NOTE and wake_path:
                 seed = [HumanMessage(content=SHARED_NOTE_WAKE_SEED.format(path=wake_path))]
             elif wake_kind == WAKE_KIND_MAILBOX_LETTER and wake_path:
@@ -369,6 +408,11 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
                 seed = [HumanMessage(content=POST_CHAT_WAKE_SEED)]
             else:
                 seed = [HumanMessage(content=RUMINATION_SEED_MESSAGE)]
+        elif wake_kind == WAKE_KIND_MAILBOX_LETTER and wake_path:
+            # History is already in the state. The letter path still has to be
+            # the thing in front of the light, or the wake names a path that
+            # was never shown.
+            seed = [HumanMessage(content=MAILBOX_WAKE_SEED.format(path=wake_path))]
 
         system = SystemMessage(
             content=build_rumination_system_content(
@@ -382,8 +426,9 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
                     and wake_kind != WAKE_KIND_MEDITATION
                 ),
             )
+            + checkpoint_prompt(state, settings)
         )
-        conversation = existing if existing else seed
+        conversation = [*existing, *seed] if existing else seed
         window = settings.chat_respond_window
         recent = conversation[-window:]
         if wake_kind == WAKE_KIND_MEDITATION:
@@ -398,7 +443,11 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
         if not isinstance(last, AIMessage) or not last.tool_calls:
             return {}
         agent_id = state.get("agent_id") or "lumen"
-        tool_messages = run_tool_calls(last, agent_id=agent_id)
+        tool_messages = run_tool_calls(
+            last,
+            agent_id=agent_id,
+            autonomous=wake_is_unattended(state.get("wake_kind"), rumination=True),
+        )
         rounds = (state.get("tool_rounds") or 0) + 1
         cap = _effective_tool_cap(state)
         update: dict = {"messages": tool_messages, "tool_rounds": rounds}
@@ -420,13 +469,17 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
         context_md = state.get("agent_context_markdown") or ""
         wake_kind = state.get("wake_kind")
         task_hint = _rumination_task_hint(wake_kind)
-        finalize_hint = _rumination_finalize_hint(wake_kind)
-        if counts_as_felt_cycle(wake_kind):
-            finalize_hint += format_felt_cycles_finalize_nudge(state.get("felt_cycles"))
-        if report_back_enabled(settings, agent_id) and wake_kind != WAKE_KIND_MEDITATION:
-            finalize_hint += REPORT_BACK_FINALIZE_NUDGE
+        checkpoint_close = checkpoint_finalize_hint(state, settings)
+        if checkpoint_close:
+            finalize_hint = checkpoint_close
+        else:
+            finalize_hint = _rumination_finalize_hint(wake_kind)
+            if counts_as_felt_cycle(wake_kind):
+                finalize_hint += format_felt_cycles_finalize_nudge(state.get("felt_cycles"))
+            if report_back_enabled(settings, agent_id) and wake_kind != WAKE_KIND_MEDITATION:
+                finalize_hint += REPORT_BACK_FINALIZE_NUDGE
         system = SystemMessage(
-            content=load_persona(agent_id)
+            content=build_base_system(agent_id)
             + context_md
             + task_hint
             + finalize_hint
@@ -478,6 +531,12 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
         if peer_ids:
             memory.mark_peer_inbox_seen(agent_id, peer_ids)
 
+        if state.get("wake_kind") == WAKE_KIND_MEDITATION:
+            from light_house.personal.meditation_return import remember_meditation_close
+
+            closing = latest_assistant_text(state.get("messages") or []) or state.get("generated_text") or ""
+            remember_meditation_close(settings, agent_id, closing)
+
         body = state.get("generated_text", "").strip()
         if not body:
             _record_trace(state, persisted=False, generated_text_chars=0)
@@ -498,16 +557,8 @@ def build_rumination_nodes(*, settings: Settings, memory: MemoryService):
             "internal_chars_used": chars_used,
         }
         continuing = should_continue_internal_loop(settings, next_state)
-        if state.get("wake_kind") in (
-            WAKE_KIND_KEVIN_SHARED_NOTE,
-            WAKE_KIND_MAILBOX_LETTER,
-        ) and not continuing:
-            closing = (latest_assistant_text(state.get("messages") or []) or "").strip()
-            if closing:
-                memory.append_peer_chat_reply(
-                    thread_id=state["thread_id"],
-                    assistant_text=closing,
-                )
+        # The close is already in the private stream. Copying it into the chat
+        # put the inner sitting in the chair.
         logger.info(
             "Stored private %s for thread_id=%s step=%s (%d chars, summary=%d chars, tool_rounds=%s%s)",
             MEMORY_TAG_PRIVATE_RUMINATION,

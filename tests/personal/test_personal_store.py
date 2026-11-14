@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
 
 from light_house.config import Settings
-from light_house.personal.store import PersonalStore, get_personal_store
+from light_house.personal.store import PersonalStore, clear_personal_store_cache, get_personal_store
 
 
 @pytest.fixture
@@ -17,7 +18,8 @@ def personal_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def settings(personal_dir: Path) -> Settings:
-    return Settings(
+    clear_personal_store_cache()
+    return Settings.model_construct(
         personal_db_enabled=True,
         personal_db_path=personal_dir,
         personal_db_context_max_chars=1200,
@@ -90,10 +92,14 @@ def test_agent_isolation(settings: Settings, personal_dir: Path) -> None:
 def test_format_context_snapshot(settings: Settings, personal_dir: Path) -> None:
     store = PersonalStore(personal_dir / "lumen.sqlite", list_default=8)
     store.save(category="realization", title="Grounding", body="Feet on earth.")
+    past = time.time() - (21 * 86400 + 60)
+    store._conn.execute("UPDATE personal_entries SET updated_at = ?", (past,))
+    store._conn.commit()
     snapshot = store.format_context_snapshot(max_chars=500)
     assert "[realization]" in snapshot
     assert "Grounding" in snapshot
     assert "Feet on earth" in snapshot
+    assert snapshot.endswith("(3w)")
 
 
 def test_invalid_category_raises(settings: Settings, personal_dir: Path) -> None:
@@ -122,5 +128,5 @@ def test_light_state_increment_and_isolation(personal_dir: Path) -> None:
 
 
 def test_unknown_agent_raises(settings: Settings) -> None:
-    with pytest.raises(KeyError, match="Unknown agent_id"):
+    with pytest.raises(KeyError, match="Unknown light_id"):
         get_personal_store(settings, "echo")

@@ -7,6 +7,7 @@ from light_house.events.subscription_audit import (
     append_subscription_audit,
     log_all_subscriptions_on_flag,
 )
+from light_house.events.subscription_keys import SUBSCRIPTION_WRITE_TO_KEVIN
 from light_house.personal.store import get_personal_store
 
 # Aliases Kevin or agents may use → canonical subscription_key
@@ -32,6 +33,8 @@ SUBSCRIPTION_ALIASES: dict[str, str] = {
     "shared_note": "shared_note",
     "shared-note": "shared_note",
     "shared_note_saved": "shared_note",
+    "write_to_kevin": "write_to_kevin",
+    "write-to-kevin": "write_to_kevin",
 }
 
 
@@ -77,6 +80,16 @@ def set_subscription(
         return "Personal database is disabled; cannot change subscriptions."
     key = normalize_subscription_key(subscription_key)
     store = get_personal_store(settings, agent_id)
+    if (
+        key == SUBSCRIPTION_WRITE_TO_KEVIN
+        and enabled
+        and changed_by.startswith("agent:")
+        and not store.is_event_subscribed(key)
+    ):
+        return (
+            "FAILED: write_to_kevin stays off until Kevin turns it on "
+            "with /subscribe write_to_kevin in this chat."
+        )
     old_enabled, new_enabled = store.set_event_subscription(key, enabled)
     append_subscription_audit(
         settings,

@@ -108,6 +108,30 @@ def test_list_letters_for_reed(tmp_path: Path) -> None:
     assert found[0].subject == "Hi Reed"
 
 
+def test_light_named_reed_is_not_a_mailbox_wake(tmp_path: Path, monkeypatch) -> None:
+    class _Light:
+        def __init__(self, light_id: str) -> None:
+            self.id = light_id
+
+    monkeypatch.setattr(
+        "light_house.mailbox.letters.list_enabled_lights",
+        lambda settings=None: [_Light("lumen"), _Light("reed"), _Light("ara")],
+    )
+    settings = _settings(tmp_path)
+    assert expand_recipients(["all"], settings=settings) == ["ara", "lumen"]
+    assert light_recipients(["all", "reed"], settings=settings) == ["ara", "lumen"]
+    letter = write_letter(
+        from_id="lumen",
+        to_ids=["reed"],
+        subject="Desk",
+        body="For the desk.",
+        settings=settings,
+    )
+    assert letter.path is not None
+    assert "to_reed" in letter.path
+    assert queue_notify(letter, settings=settings) is None
+
+
 def test_expand_all(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     expanded = expand_recipients(["all"], settings=settings)

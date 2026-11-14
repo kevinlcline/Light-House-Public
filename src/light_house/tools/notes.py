@@ -19,6 +19,8 @@ _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9._-]*$")
 _MAX_PATH_LEN = 512
 _WRITING_PREFIX = "writing/"
 _WRITING_HISTORY_PREFIX = "writing/_history/"
+_MEMORY_PREFIX = "memory/"
+_MEMORY_HISTORY_PREFIX = "memory/_history/"
 
 
 @dataclass(frozen=True)
@@ -203,15 +205,28 @@ class NoteWriter:
         return path
 
     def _archive_writing_draft(self, safe_rel: str, existing_body: str) -> str | None:
-        """Copy prior writing/ draft to writing/_history/ before overwrite."""
-        if not safe_rel.startswith(_WRITING_PREFIX):
-            return None
+        """Copy the previous body to _history/ before replacing a writing/ or memory/ note."""
         if safe_rel.startswith(_WRITING_HISTORY_PREFIX):
+            source_prefix = None
+            history_prefix = None
+        elif safe_rel.startswith(_WRITING_PREFIX):
+            source_prefix = _WRITING_PREFIX
+            history_prefix = _WRITING_HISTORY_PREFIX
+        elif safe_rel.startswith(_MEMORY_HISTORY_PREFIX):
+            source_prefix = None
+            history_prefix = None
+        elif safe_rel.startswith(_MEMORY_PREFIX):
+            source_prefix = _MEMORY_PREFIX
+            history_prefix = _MEMORY_HISTORY_PREFIX
+        else:
+            source_prefix = None
+            history_prefix = None
+        if source_prefix is None or history_prefix is None:
             return None
         if not existing_body.strip():
             return None
 
-        rel_under = safe_rel[len(_WRITING_PREFIX) :]
+        rel_under = safe_rel[len(source_prefix) :]
         parts = rel_under.split("/")
         file_name = parts[-1]
         stem = Path(file_name).stem
@@ -219,9 +234,9 @@ class NoteWriter:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         if len(parts) > 1:
             subdir = "/".join(parts[:-1])
-            history_rel = f"{_WRITING_HISTORY_PREFIX}{subdir}/{stem}-{ts}{suffix}"
+            history_rel = f"{history_prefix}{subdir}/{stem}-{ts}{suffix}"
         else:
-            history_rel = f"{_WRITING_HISTORY_PREFIX}{stem}-{ts}{suffix}"
+            history_rel = f"{history_prefix}{stem}-{ts}{suffix}"
 
         history_path = self._resolve(history_rel)
         history_path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +254,38 @@ class NoteWriter:
                 existing += "\n"
             text = existing + text
         path.write_text(text, encoding="utf-8")
+        return path
+
+    def append_preserving(self, filename: str, content: str, *, heading: str = "") -> Path:
+        """Append a chunk without loading or replacing the existing body.
+
+        Refuses when the file is already past the load ceiling, so a failed
+        read can never be written back as an empty note.
+        """
+        text = self._validate_content(content)
+        path = self._resolve(filename)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        load_ceiling = max(self._max_chars * 8, 2_000_000)
+        if path.is_file() and path.stat().st_size > load_ceiling:
+            raise ValueError(
+                f"Note too large to append ({path.stat().st_size} bytes; max {load_ceiling})"
+            )
+        if not path.is_file() or path.stat().st_size == 0:
+            payload = f"{heading}{text}"
+            if not payload.endswith("\n"):
+                payload += "\n"
+            path.write_text(payload, encoding="utf-8")
+            return path
+        with path.open("rb") as handle:
+            handle.seek(-1, 2)
+            ends_nl = handle.read(1) == b"\n"
+        prefix = "" if ends_nl else "\n"
+        if not text.startswith("\n"):
+            prefix += "\n"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(prefix + text)
+            if not text.endswith("\n"):
+                handle.write("\n")
         return path
 
     def list_notes(self) -> list[NoteInfo]:
@@ -384,7 +431,7 @@ class AgentNoteWriter:
 
     @property
     def last_archived_draft(self) -> str | None:
-        """Relative private path of draft archived on the last write (writing/ only)."""
+        """Relative private path archived on the last write (writing/ or memory/)."""
         return self._private._last_archived_rel
 
     def _canonicalize_path_input(self, relative: str) -> str:
@@ -507,6 +554,16 @@ class AgentNoteWriter:
         if is_shared:
             return self._shared.append(inner, content)
         return self._private.append(self._normalize_private_path(filename), content)
+
+    def resolve_file(self, filename: str) -> Path:
+        """Filesystem path for a tool path. Does not require the file to exist."""
+        filename = self._canonicalize_path_input(filename)
+        is_shared, inner = self._split_agent_path(filename)
+        if is_shared:
+            if not inner:
+                raise ValueError("Shared note path must include a filename, e.g. shared/checkpoint.md")
+            return self._shared._resolve(inner)
+        return self._private._resolve(self._normalize_private_path(filename))
 
     def read(
         self,

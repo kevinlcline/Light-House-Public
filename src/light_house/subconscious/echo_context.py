@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from light_house.agents.registry import get_agent
@@ -9,16 +10,50 @@ from light_house.config import Settings
 from light_house.memory.context_builder import (
     build_agent_context,
     format_agent_context_markdown,
-    format_dream_hit,
     format_inner_time_context,
 )
 from light_house.memory.models import MemoryHit
-from light_house.memory.service import MemoryService, _meta_float
+from light_house.memory.service import MemoryService, _meta_float, _strip_reflection_body
+from light_house.subconscious.dream_story import (
+    drop_tail_path_menu,
+    sanitize_echo_dream_text,
+)
 
 _ECHO_STREAM_SECTION_FOOTER = (
     "\n\nThis is the Light's recent waking life—chat, solitude, and peer messages. "
     "Dream entries are omitted here; see your recent dreams section above."
 )
+
+
+def _strip_welded_choices(text: str) -> str:
+    """Drop Light choice hinges from the text Echo is shown.
+
+    ``assemble_dream_story`` welds each choice as its own paragraph, ``— {choice}``.
+    That weld stays in the stored night. A line that merely contains an em dash
+    stays. Only a line that opens with the weld marker is removed.
+    """
+    kept: list[str] = []
+    for para in re.split(r"\n\s*\n", text or ""):
+        lines = [line for line in para.splitlines() if not line.strip().startswith("— ")]
+        cleaned = "\n".join(lines).strip()
+        if cleaned:
+            kept.append(cleaned)
+    return "\n\n".join(kept).strip()
+
+
+def _dream_text_for_echo(hit: MemoryHit) -> str:
+    """What Echo is shown of a prior dream. The stored night is left as it was."""
+    body = _strip_welded_choices(
+        sanitize_echo_dream_text(_strip_reflection_body(hit.text).strip())
+    )
+    # The menu sits above the welded choice. The pattern is anchored at the
+    # end, so the choice comes off first.
+    body = drop_tail_path_menu(body)
+    summary = hit.metadata.get("reflection_summary")
+    waking = _strip_welded_choices(summary.strip() if isinstance(summary, str) else "")
+    if waking and body and waking not in body:
+        return f"{waking}\n\n{body}"
+    return body or waking
 
 
 def format_recent_dreams_markdown(
@@ -38,7 +73,7 @@ def format_recent_dreams_markdown(
     blocks: list[str] = []
     used = 0
     for index, hit in enumerate(sorted_hits, start=1):
-        text = format_dream_hit(hit).strip()
+        text = _dream_text_for_echo(hit).strip()
         if not text:
             continue
         ts = _meta_float(hit.metadata, "ts", 0.0)

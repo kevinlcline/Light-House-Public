@@ -123,6 +123,63 @@ def test_recall_memory_tool_returns_matches(tmp_path: Path, monkeypatch) -> None
     assert "journal" in result.lower()
 
 
+def test_backfill_skips_docs_already_in_the_index(tmp_path: Path) -> None:
+    store = FileMemoryStore(tmp_path / "memory")
+    first = store.remember_stream_event(
+        thread_id="elias-home",
+        text="already indexed",
+        stream_source=STREAM_SOURCE_CHAT,
+    )
+    second = store.remember_stream_event(
+        thread_id="elias-home",
+        text="still missing",
+        stream_source=STREAM_SOURCE_CHAT,
+    )
+
+    class _Collection:
+        def __init__(self) -> None:
+            self.present = {first}
+            self.upserts: list[str] = []
+
+        def get(self, ids, include=None):
+            return {"ids": [doc_id for doc_id in ids if doc_id in self.present]}
+
+        def upsert(self, ids, documents, metadatas):
+            self.upserts.extend(ids)
+            self.present.update(ids)
+
+    from light_house.memory.recall_index import SemanticRecallIndex
+
+    index = SemanticRecallIndex.__new__(SemanticRecallIndex)
+    index._collection = _Collection()
+    added = index.backfill_thread(store, thread_id="elias-home")
+    assert added == 1
+    assert index._collection.upserts == [second]
+    assert index.backfill_thread(store, thread_id="elias-home") == 0
+
+
+def test_backfill_does_not_reembed_when_lookup_fails(tmp_path: Path) -> None:
+    store = FileMemoryStore(tmp_path / "memory")
+    store.remember_stream_event(
+        thread_id="elias-home",
+        text="do not re-embed me",
+        stream_source=STREAM_SOURCE_CHAT,
+    )
+
+    class _Collection:
+        def get(self, ids, include=None):
+            raise RuntimeError("index busy")
+
+        def upsert(self, ids, documents, metadatas):
+            raise AssertionError("upsert must not run when the lookup fails")
+
+    from light_house.memory.recall_index import SemanticRecallIndex
+
+    index = SemanticRecallIndex.__new__(SemanticRecallIndex)
+    index._collection = _Collection()
+    assert index.backfill_thread(store, thread_id="elias-home") == 0
+
+
 def test_era_period_label_single_month() -> None:
     hits = [
         MemoryHit(text="a", score=None, metadata={"ts": 1_700_000_000.0}),

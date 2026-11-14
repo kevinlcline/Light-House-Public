@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-store">
     <title>My tools — Light-House</title>
-    <script src="/static/ui/theme-init.js"></script>
-    <link rel="stylesheet" href="/static/ui/theme.css">
-    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
+    <script src="/static/ui/theme-init.js?v=cssfix3"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css?v=cssfix3">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=cssfix3">
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -232,8 +232,8 @@
     <main class="main">
         <p class="who" id="who">Signed in as —</p>
         <p class="hint">
-            Connect tools for <strong>your</strong> account. Lights use them in private 1:1 chat
-            only — not in group chat, and not when a guest is speaking.
+            Connect tools for <strong>your</strong> account. Lights use them in 1:1 and Group
+            when you are speaking as yourself — not when a guest is speaking.
         </p>
 
         <section class="card" aria-labelledby="calendar-heading">
@@ -242,25 +242,27 @@
                 <span class="badge off" id="calendar-badge">not connected</span>
                 <span class="badge off" id="docs-badge">docs off</span>
                 <span class="badge off" id="sheets-badge">sheets off</span>
+                <span class="badge off" id="gmail-badge">gmail off</span>
+                <span class="badge off" id="drive-badge">drive off</span>
+                <span class="badge off" id="tasks-badge">tasks off</span>
             </h2>
-            <p class="meta" id="calendar-meta">Connect Calendar + Docs + Sheets with one click.</p>
+            <p class="meta" id="calendar-meta">Connect Calendar, Docs, Sheets, Gmail, Drive, and Tasks with one click.</p>
 
             <div class="connect-block">
                 <p id="connect-help">
                     Click the button. Sign in with Google. On Google’s consent screen,
-                    leave <strong>every</strong> checkbox checked — especially
-                    “See, edit, create, and delete all your Google Sheets spreadsheets”.
-                    If Sheets stays off after connecting, Reconnect and watch for that
-                    Sheets line (Google lets you uncheck individual permissions).
+                    leave <strong>every</strong> checkbox checked — Sheets, Gmail
+                    (read and send), Drive, and Tasks.
+                    If a badge stays off, Reconnect and leave that line checked
+                    (Google lets you uncheck individual permissions).
                 </p>
                 <p class="warn" id="oauth-missing" hidden>
                     Google connect isn’t set up on this house yet.
                     Dad needs to add <code>GOOGLE_OAUTH_CLIENT_ID</code> and
                     <code>GOOGLE_OAUTH_CLIENT_SECRET</code> in Environment, then restart.
-                    Also enable Calendar API, Docs API, Sheets API, and Drive API,
-                    and add the Spreadsheets scope on the OAuth consent screen
-                    (Data Access → add
-                    <code>https://www.googleapis.com/auth/spreadsheets</code>).
+                    Also enable Calendar API, Docs API, Sheets API, Drive API,
+                    Gmail API, and Tasks API, and add those scopes on the OAuth
+                    consent screen.
                 </p>
                 <div class="form-actions">
                     <a class="primary-btn" id="connect-google"
@@ -348,7 +350,7 @@
 
     <script src="/static/ui/theme.js"></script>
     <script src="/static/ui/me.js"></script>
-    <script src="/static/ui/menu.js?v=house3"></script>
+    <script src="/static/ui/menu.js?v=house5"></script>
     <script src="/static/ui/admin.js"></script>
     <script>
         const statusEl = document.getElementById('status');
@@ -356,6 +358,9 @@
         const badgeEl = document.getElementById('calendar-badge');
         const docsBadgeEl = document.getElementById('docs-badge');
         const sheetsBadgeEl = document.getElementById('sheets-badge');
+        const gmailBadgeEl = document.getElementById('gmail-badge');
+        const driveBadgeEl = document.getElementById('drive-badge');
+        const tasksBadgeEl = document.getElementById('tasks-badge');
         const metaEl = document.getElementById('calendar-meta');
         const providerEl = document.getElementById('provider');
         const connectBtn = document.getElementById('connect-google');
@@ -449,7 +454,9 @@
                 connectBtn.removeAttribute('aria-disabled');
                 connectBtn.href = '/v1/me/tools/calendar/google/start';
                 const needsReconnect = cal && cal.connected && cal.provider === 'google'
-                    && (!cal.docs_connected || !cal.sheets_connected);
+                    && (!cal.docs_connected || !cal.sheets_connected
+                        || !cal.gmail_connected || !cal.drive_connected
+                        || !cal.tasks_connected);
                 connectBtn.textContent = (cal && cal.connected && cal.provider === 'google')
                     ? (needsReconnect ? 'Reconnect Google (add missing)' : 'Reconnect Google')
                     : 'Connect Google';
@@ -479,6 +486,15 @@
                 sheetsBadgeEl.classList.add('off');
             }
 
+            function setBadge(el, on, onText, offText) {
+                el.textContent = on ? onText : offText;
+                el.classList.toggle('on', on);
+                el.classList.toggle('off', !on);
+            }
+            setBadge(gmailBadgeEl, Boolean(cal && cal.gmail_connected), 'gmail on', 'gmail off');
+            setBadge(driveBadgeEl, Boolean(cal && cal.drive_connected), 'drive on', 'drive off');
+            setBadge(tasksBadgeEl, Boolean(cal && cal.tasks_connected), 'tasks on', 'tasks off');
+
             if (cal && cal.connected) {
                 badgeEl.textContent = 'calendar on · ' + (cal.provider || '?');
                 badgeEl.classList.remove('off');
@@ -491,6 +507,9 @@
                 if (cal.provider === 'google') {
                     bits.push(cal.docs_connected ? 'Docs ready' : 'Docs missing — reconnect');
                     bits.push(cal.sheets_connected ? 'Sheets ready' : 'Sheets missing — reconnect');
+                    bits.push(cal.gmail_connected ? 'Gmail ready' : 'Gmail missing — reconnect');
+                    bits.push(cal.drive_connected ? 'Drive ready' : 'Drive missing — reconnect');
+                    bits.push(cal.tasks_connected ? 'Tasks ready' : 'Tasks missing — reconnect');
                     const scopes = Array.isArray(cal.scopes) ? cal.scopes : [];
                     if (scopes.length) {
                         const short = scopes.map((s) => {
@@ -509,7 +528,7 @@
                 badgeEl.classList.add('off');
                 disconnectBtn.hidden = true;
                 metaEl.textContent = oauthReady
-                    ? 'Not connected yet — use the button below for Calendar + Docs + Sheets.'
+                    ? 'Not connected yet — use the button below for Calendar, Docs, Sheets, Gmail, Drive, and Tasks.'
                     : 'Google button unavailable until Dad configures OAuth in Environment.';
             }
         }

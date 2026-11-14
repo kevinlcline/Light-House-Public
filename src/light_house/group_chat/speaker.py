@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 _GUEST_SPEAKER_RE = re.compile(r"^guest-[1-9]\d{0,2}$")
+_VISITOR_SPEAKER_ID = "visitor"
 _DISPLAY_NAME_RE = re.compile(r"^[\w][\w .'\-]{0,39}$", re.UNICODE)
 _MAX_DISPLAY_NAME = 40
 _MAX_PRESENT = 3  # account + guest-1 + guest-2
@@ -103,6 +104,36 @@ def normalize_present_humans(
         )
         seen.add(sid.lower())
     return out
+
+
+def is_guest_or_visitor_speaker(speaker_id: str | None) -> bool:
+    sid = (speaker_id or "").strip().lower()
+    return bool(_GUEST_SPEAKER_RE.match(sid) or sid == _VISITOR_SPEAKER_ID)
+
+
+def tool_human_for_group(
+    *,
+    account_user_id: str | None = None,
+    speaker_id: str | None = None,
+    present_humans: list[dict[str, str]] | None = None,
+    transcript: list[dict[str, Any]] | None = None,
+) -> tuple[str | None, str | None]:
+    """Signed-in account and last human/visitor speaker for host tools in Group."""
+    account = (account_user_id or "").strip() or None
+    if not account:
+        for person in present_humans or []:
+            sid = str(person.get("speaker_id") or "").strip()
+            if sid and not is_guest_or_visitor_speaker(sid):
+                account = sid
+                break
+    speaker = (speaker_id or "").strip() or None
+    if not speaker:
+        for row in reversed(list(transcript or [])):
+            kind = str(row.get("speaker_kind") or "").strip()
+            if kind in {"human", "visitor"}:
+                speaker = str(row.get("speaker_id") or "").strip() or None
+                break
+    return account, speaker
 
 
 def format_presence_for_prompt(present: list[dict[str, str]] | None) -> str:

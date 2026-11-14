@@ -19,6 +19,8 @@ PERSONAL_TOOL_NAMES = frozenset(
         "subscribe_event",
         "unsubscribe_event",
         "list_event_subscriptions",
+        "in_progress",
+        "promise",
     }
 )
 
@@ -92,6 +94,71 @@ def list_personal(
     entries = store.list_entries(category=category, limit=limit)
     label = f"category={category}" if category else "all categories"
     return _format_entries(entries, header=f"Recent personal entries ({label}):")
+
+
+def _execute_in_progress(store: PersonalStore, args: dict[str, Any]) -> str:
+    from light_house.personal.in_progress import format_in_progress_items
+
+    action = str(args.get("action") or "list").strip().lower()
+    if action in ("list", "show"):
+        return format_in_progress_items(store.list_in_progress())
+    if action in ("name", "add", "subscribe"):
+        item = store.name_in_progress(
+            str(args.get("name") or args.get("title") or ""),
+            str(args.get("note") or ""),
+        )
+        extra = f" — {item.note}" if item.note else ""
+        return (
+            f"Named as in progress: {item.name}{extra}. "
+            "On a free awake it will be mentioned as a glance. "
+            "Unsubscribe anytime with in_progress(action=\"unsubscribe\", name=…)."
+        )
+    if action in ("unsubscribe", "drop", "remove"):
+        dropped = store.unsubscribe_in_progress(str(args.get("name") or args.get("title") or ""))
+        if dropped is None:
+            return "That name is not on your in-progress list."
+        return f"Unsubscribed: {dropped}. It will not be mentioned on free awakes."
+    return (
+        "in_progress action should be name, unsubscribe, or list. "
+        "This list is yours — Kevin does not add items."
+    )
+
+
+def _execute_promise(store: PersonalStore, args: dict[str, Any], *, settings: Settings) -> str:
+    from light_house.personal.promise import (
+        format_waiting_promises,
+        leave_reply,
+        local_today,
+        parse_due_day,
+    )
+
+    action = str(args.get("action") or "list").strip().lower()
+    tz_name = getattr(settings, "dream_timezone", None) or "America/Los_Angeles"
+    today = local_today(tz_name)
+    if action in ("list", "show"):
+        return format_waiting_promises(store.list_promises(waiting_only=True))
+    if action in ("leave", "add", "name"):
+        due = parse_due_day(str(args.get("day") or args.get("due") or ""), today=today)
+        item, created = store.leave_promise(str(args.get("note") or args.get("name") or ""), due.isoformat())
+        return leave_reply(item, created=created, today=today)
+    if action in ("move", "reschedule"):
+        due = parse_due_day(str(args.get("day") or args.get("due") or ""), today=today)
+        moved = store.move_promise(
+            str(args.get("name") or args.get("note") or args.get("id") or ""),
+            due.isoformat(),
+        )
+        if moved is None:
+            return "That promise is not here."
+        return leave_reply(moved, created=False, today=today)
+    if action in ("drop", "unsubscribe", "remove"):
+        dropped = store.drop_promise(str(args.get("name") or args.get("note") or args.get("id") or ""))
+        if dropped is None:
+            return "That promise is not here."
+        return f"Dropped: {dropped}. It will not be handed."
+    return (
+        "promise action should be leave, move, drop, or list. "
+        "The day is yours. Kevin does not write these."
+    )
 
 
 def execute_personal_tool(
@@ -170,6 +237,10 @@ def execute_personal_tool(
             from light_house.events.subscription_edit import list_subscriptions_text
 
             return list_subscriptions_text(settings, agent_id)
+        if name == "in_progress":
+            return _execute_in_progress(store, args)
+        if name == "promise":
+            return _execute_promise(store, args, settings=settings)
         return f"Unknown personal tool: {name}"
     except ValueError as exc:
         return f"Tool {name} failed: {exc}"

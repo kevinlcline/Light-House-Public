@@ -57,7 +57,11 @@ def test_write_env_creates_backup(tmp_path: Path) -> None:
 
 
 def test_env_api_returns_404_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = _test_settings(tmp_path, ENV_EDITOR_ENABLED=False)
+    settings = _test_settings(
+        tmp_path,
+        ENV_EDITOR_ENABLED=False,
+        LIGHTS_ADMIN_ENABLED=False,
+    )
     _install_settings(settings, monkeypatch)
     try:
         with TestClient(app) as client:

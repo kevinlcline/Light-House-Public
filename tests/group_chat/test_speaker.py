@@ -9,6 +9,7 @@ from light_house.group_chat.speaker import (
     format_presence_for_prompt,
     normalize_present_humans,
     resolve_group_utterance_speaker,
+    tool_human_for_group,
 )
 
 
@@ -147,3 +148,29 @@ def test_current_speaker_prompt_host_among_guests():
     )
     assert "Moose" in text
     assert "did not say this line" in text
+
+
+def test_tool_human_uses_account_and_last_human():
+    account, speaker = tool_human_for_group(
+        present_humans=[
+            {"speaker_id": "kevin", "display_name": "Kevin"},
+            {"speaker_id": "guest-1", "display_name": "Joey"},
+        ],
+        transcript=[
+            {"speaker_kind": "human", "speaker_id": "kevin"},
+            {"speaker_kind": "light", "speaker_id": "lumen"},
+            {"speaker_kind": "human", "speaker_id": "guest-1"},
+        ],
+    )
+    assert account == "kevin"
+    assert speaker == "guest-1"
+
+
+def test_tool_human_prefers_explicit_ids():
+    account, speaker = tool_human_for_group(
+        account_user_id="kevin",
+        speaker_id="visitor",
+        present_humans=[{"speaker_id": "other", "display_name": "Other"}],
+    )
+    assert account == "kevin"
+    assert speaker == "visitor"

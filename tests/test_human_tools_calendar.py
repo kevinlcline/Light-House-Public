@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +12,12 @@ from fastapi.testclient import TestClient
 from light_house.config import Settings
 from light_house.humans.store import create_human
 from light_house.humans.google_calendar_oauth import (
+    GOOGLE_CONNECT_SCOPES,
+    GOOGLE_GMAIL_READONLY_SCOPE,
+    GOOGLE_GMAIL_SEND_SCOPE,
+    GOOGLE_SPREADSHEETS_SCOPE,
+    GOOGLE_TASKS_SCOPE,
+    OAUTH_RETURN_COOKIE,
     build_google_authorize_url,
     sign_oauth_state,
     verify_oauth_state,
@@ -48,6 +56,9 @@ def _settings(tmp_path: Path, **overrides: object) -> Settings:
         "HUMANS_COMMS_PATH": str(tmp_path / "humans" / "comms_allows.json"),
         "HUMANS_TOOLS_PATH": str(tmp_path / "humans" / "user_tools.json"),
         "HOUSE_DAD_USER_ID": "kevin",
+        "GOOGLE_OAUTH_CLIENT_ID": "",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "",
+        "GOOGLE_OAUTH_REDIRECT_URI": "",
     }
     base.update(overrides)
     return Settings(**base)
@@ -69,6 +80,53 @@ def _client_as(settings: Settings, *, user_id: str, role: str) -> TestClient:
     client = TestClient(app)
     client.cookies.update(_cookie(settings, user_id=user_id, role=role))
     return client
+
+
+def _set_cookie_headers(res) -> list[str]:
+    getter = getattr(res.headers, "get_list", None)
+    if callable(getter):
+        found = list(getter("set-cookie"))
+        if found:
+            return found
+    raw = res.headers.get("set-cookie")
+    return [raw] if raw else []
+
+
+def _hop_target(res) -> str:
+    """URL the Google hop page sends the browser to."""
+    marker = "location.replace("
+    text = res.text
+    start = text.find(marker)
+    assert start != -1, text[:300]
+    start += len(marker)
+    end = text.find(");", start)
+    assert end != -1
+    return json.loads(text[start:end])
+
+
+def _cookie_pair(headers: list[str], name: str) -> str:
+    prefix = f"{name}="
+    for header in headers:
+        if header.startswith(prefix):
+            return header.split(";", 1)[0].split("=", 1)[1]
+    raise AssertionError(f"missing {name} cookie")
+
+
+_OAUTH_ENV = {
+    "GOOGLE_OAUTH_CLIENT_ID": "house-cid.apps.googleusercontent.com",
+    "GOOGLE_OAUTH_CLIENT_SECRET": "house-secret",
+    "GOOGLE_OAUTH_REDIRECT_URI": "https://example.test/v1/me/tools/calendar/google/callback",
+    "PUBLIC_BASE_URL": "https://example.test",
+}
+
+
+def _fake_google_tokens(settings_arg, *, code, request_base=None, require_refresh_token=True):
+    assert code == "auth-code-123"
+    return {
+        "refresh_token": "from-google-refresh",
+        "access_token": "access-123",
+        "scope": GOOGLE_CONNECT_SCOPES,
+    }
 
 
 def test_schema_documents_providers() -> None:
@@ -128,24 +186,28 @@ def test_clear_connection(tmp_path: Path) -> None:
     assert get_calendar_connection(settings, "kevin") is None
 
 
-def test_access_denied_group_and_guest() -> None:
-    assert calendar_access_denied_reason(
-        account_user_id="kevin",
-        speaker_id="kevin",
-        chat_channel="group",
+def test_access_denied_guest_not_group() -> None:
+    assert (
+        calendar_access_denied_reason(
+            account_user_id="kevin",
+            speaker_id="kevin",
+            chat_channel="group",
+        )
+        is None
     )
-    assert "group" in calendar_access_denied_reason(
-        account_user_id="kevin",
-        speaker_id="kevin",
-        chat_channel="group",
-    ).lower()
     guest_msg = calendar_access_denied_reason(
         account_user_id="kevin",
         speaker_id="guest-1",
-        chat_channel="dm",
+        chat_channel="group",
     )
     assert guest_msg is not None
     assert "guest" in guest_msg.lower()
+    visitor_msg = calendar_access_denied_reason(
+        account_user_id="kevin",
+        speaker_id="visitor",
+        chat_channel="group",
+    )
+    assert visitor_msg is not None
     assert (
         calendar_access_denied_reason(
             account_user_id="kevin",
@@ -321,8 +383,8 @@ def test_connect_button_start_redirects(
     client2 = TestClient(app, follow_redirects=False)
     client2.cookies.update(_cookie(settings, user_id="kevin", role="dad"))
     res = client2.get("/v1/me/tools/calendar/google/start")
-    assert res.status_code == 302
-    loc = res.headers["location"]
+    assert res.status_code == 200
+    loc = _hop_target(res)
     assert loc.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
     assert "client_id=house-cid" in loc
     assert "access_type=offline" in loc
@@ -361,12 +423,7 @@ def test_oauth_callback_saves_refresh_token(
         return {
             "refresh_token": "from-google-refresh",
             "access_token": "access-123",
-            "scope": (
-                "https://www.googleapis.com/auth/calendar "
-                "https://www.googleapis.com/auth/documents "
-                "https://www.googleapis.com/auth/spreadsheets "
-                "https://www.googleapis.com/auth/drive.readonly"
-            ),
+            "scope": GOOGLE_CONNECT_SCOPES,
         }
 
     monkeypatch.setattr(
@@ -384,8 +441,8 @@ def test_oauth_callback_saves_refresh_token(
         "/v1/me/tools/calendar/google/callback",
         params={"code": "auth-code-123", "state": state},
     )
-    assert res.status_code == 302
-    assert res.headers["location"] == "/my-tools.html?calendar=connected"
+    assert res.status_code == 200
+    assert _hop_target(res) == "/my-tools.html?calendar=connected"
     conn = get_calendar_connection(settings, "kevin")
     assert conn is not None
     assert conn.auth_method == "oauth"
@@ -393,6 +450,109 @@ def test_oauth_callback_saves_refresh_token(
     pub = calendar_public_view(settings, "kevin")
     assert pub.docs_connected is True
     assert pub.sheets_connected is True
+
+
+def test_connect_start_sets_cross_site_return_cookie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, **_OAUTH_ENV)
+    _install(settings, monkeypatch)
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.update(_cookie(settings, user_id="kevin", role="dad"))
+    res = client.get("/v1/me/tools/calendar/google/start")
+    assert res.status_code == 200
+    headers = _set_cookie_headers(res)
+    match = next(h for h in headers if h.startswith(f"{OAUTH_RETURN_COOKIE}="))
+    assert "HttpOnly" in match
+    assert "SameSite=None" in match
+    assert "Secure" in match
+    assert "Path=/v1/me/tools/calendar/google/callback" in match
+    token = _cookie_pair(headers, OAUTH_RETURN_COOKIE)
+    state = parse_qs(urlparse(_hop_target(res)).query)["state"][0]
+    assert verify_oauth_state(settings, token) == "kevin"
+    assert verify_oauth_state(settings, state) == "kevin"
+    assert token != state
+
+
+def test_oauth_callback_accepts_return_cookie_without_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, **_OAUTH_ENV)
+    _install(settings, monkeypatch)
+    monkeypatch.setattr("light_house.main.exchange_code_for_tokens", _fake_google_tokens)
+    monkeypatch.setattr(
+        "light_house.humans.google_calendar_oauth.scopes_from_access_token",
+        lambda _token: [],
+    )
+    starter = TestClient(app, follow_redirects=False)
+    starter.cookies.update(_cookie(settings, user_id="kevin", role="dad"))
+    start = starter.get("/v1/me/tools/calendar/google/start")
+    token = _cookie_pair(_set_cookie_headers(start), OAUTH_RETURN_COOKIE)
+    state = parse_qs(urlparse(_hop_target(start)).query)["state"][0]
+
+    bare = TestClient(app, follow_redirects=False)
+    bare.cookies.set(OAUTH_RETURN_COOKIE, token)
+    res = bare.get(
+        "/v1/me/tools/calendar/google/callback",
+        params={"code": "auth-code-123", "state": state},
+    )
+    assert res.status_code == 200
+    assert _hop_target(res) == "/my-tools.html?calendar=connected"
+    cleared = _set_cookie_headers(res)
+    assert any(
+        h.startswith(f"{OAUTH_RETURN_COOKIE}=") and "Max-Age=0" in h for h in cleared
+    )
+    conn = get_calendar_connection(settings, "kevin")
+    assert conn is not None
+    assert conn.refresh_token == "from-google-refresh"
+
+
+def test_oauth_callback_without_cookies_redirects_not_json_401(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, **_OAUTH_ENV)
+    _install(settings, monkeypatch)
+
+    def fail_exchange(*_args, **_kwargs):
+        raise AssertionError("token exchange should not run")
+
+    monkeypatch.setattr("light_house.main.exchange_code_for_tokens", fail_exchange)
+    state = sign_oauth_state(settings, user_id="kevin")
+    client = TestClient(app, follow_redirects=False)
+    res = client.get(
+        "/v1/me/tools/calendar/google/callback",
+        params={"code": "auth-code-123", "state": state},
+    )
+    assert res.status_code == 200
+    location = _hop_target(res)
+    assert location.startswith("/my-tools.html?calendar=error&detail=")
+    assert "did%20not%20come%20back" in location or "did not come back" in location
+    assert "Authentication required" not in res.text
+    assert get_calendar_connection(settings, "kevin") is None
+
+
+def test_oauth_callback_rejects_return_cookie_for_a_different_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, **_OAUTH_ENV)
+    _install(settings, monkeypatch)
+
+    def fail_exchange(*_args, **_kwargs):
+        raise AssertionError("token exchange should not run")
+
+    monkeypatch.setattr("light_house.main.exchange_code_for_tokens", fail_exchange)
+    state = sign_oauth_state(settings, user_id="kevin")
+    other = sign_oauth_state(settings, user_id="teeter")
+    client = TestClient(app, follow_redirects=False)
+    client.cookies.set(OAUTH_RETURN_COOKIE, other)
+    res = client.get(
+        "/v1/me/tools/calendar/google/callback",
+        params={"code": "auth-code-123", "state": state},
+    )
+    assert res.status_code == 200
+    assert "calendar=error" in _hop_target(res)
+    assert get_calendar_connection(settings, "kevin") is None
+    assert get_calendar_connection(settings, "teeter") is None
 
 
 def test_oauth_callback_partial_when_sheets_scope_missing(
@@ -429,8 +589,8 @@ def test_oauth_callback_partial_when_sheets_scope_missing(
         "/v1/me/tools/calendar/google/callback",
         params={"code": "auth-code-123", "state": state},
     )
-    assert res.status_code == 302
-    assert res.headers["location"] == "/my-tools.html?calendar=partial&missing=sheets"
+    assert res.status_code == 200
+    assert _hop_target(res) == "/my-tools.html?calendar=partial&missing=sheets%2Cgmail%2Ctasks"
     pub = calendar_public_view(settings, "kevin")
     assert pub.docs_connected is True
     assert pub.sheets_connected is False
@@ -458,6 +618,9 @@ def test_oauth_callback_keeps_prior_refresh_and_merges_scopes(
                 "https://www.googleapis.com/auth/calendar",
                 "https://www.googleapis.com/auth/documents",
                 "https://www.googleapis.com/auth/drive.readonly",
+                GOOGLE_GMAIL_READONLY_SCOPE,
+                GOOGLE_GMAIL_SEND_SCOPE,
+                GOOGLE_TASKS_SCOPE,
             ],
         },
     )
@@ -482,8 +645,8 @@ def test_oauth_callback_keeps_prior_refresh_and_merges_scopes(
         "/v1/me/tools/calendar/google/callback",
         params={"code": "auth-code-123", "state": state},
     )
-    assert res.status_code == 302
-    assert res.headers["location"] == "/my-tools.html?calendar=connected"
+    assert res.status_code == 200
+    assert _hop_target(res) == "/my-tools.html?calendar=connected"
     conn = get_calendar_connection(settings, "kevin")
     assert conn is not None
     assert conn.refresh_token == "prior-refresh"
@@ -521,12 +684,17 @@ def test_reconnect_start_requests_only_missing_sheets(
     client = TestClient(app, follow_redirects=False)
     client.cookies.update(_cookie(settings, user_id="kevin", role="dad"))
     res = client.get("/v1/me/tools/calendar/google/start")
-    assert res.status_code == 302
-    loc = res.headers["location"]
+    assert res.status_code == 200
+    loc = _hop_target(res)
     from urllib.parse import parse_qs, urlparse
 
     scope = parse_qs(urlparse(loc).query).get("scope", [""])[0]
-    assert scope == "https://www.googleapis.com/auth/spreadsheets"
+    assert set(scope.split()) == {
+        GOOGLE_SPREADSHEETS_SCOPE,
+        GOOGLE_GMAIL_READONLY_SCOPE,
+        GOOGLE_GMAIL_SEND_SCOPE,
+        GOOGLE_TASKS_SCOPE,
+    }
 
 
 def test_build_authorize_url_contains_redirect(tmp_path: Path) -> None:
@@ -541,6 +709,8 @@ def test_build_authorize_url_contains_redirect(tmp_path: Path) -> None:
     assert "documents" in url
     assert "spreadsheets" in url
     assert "calendar" in url
+    assert "gmail" in url
+    assert "tasks" in url
 
 
 def test_legacy_oauth_without_scopes_has_no_docs(tmp_path: Path) -> None:
@@ -682,7 +852,18 @@ def test_sheets_tool_gates_guest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert "guest" in result.lower()
 
 
-def test_sheets_tool_gates_group_chat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sheets_tool_allows_group_for_signed_in_human() -> None:
+    assert (
+        calendar_access_denied_reason(
+            account_user_id="kevin",
+            speaker_id="kevin",
+            chat_channel="group",
+        )
+        is None
+    )
+
+
+def test_sheets_tool_gates_guest_in_group(tmp_path: Path) -> None:
     from light_house.tools.sheets_tools import execute_sheets_tool
 
     settings = _settings(
@@ -696,8 +877,8 @@ def test_sheets_tool_gates_group_chat(tmp_path: Path, monkeypatch: pytest.Monkey
         {"spreadsheet_id_or_url": "abc1234567890"},
         settings=settings,
         account_user_id="kevin",
-        speaker_id="kevin",
+        speaker_id="guest-1",
         chat_channel="group",
     )
     assert result.startswith("FAILED:")
-    assert "group" in result.lower()
+    assert "guest" in result.lower()

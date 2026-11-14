@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from light_house.config import Settings
 from light_house.tts.stage_cues import FACE_STAGE_HINT
 
 GROUP_CHAT_TASK_HINT = (
@@ -17,10 +18,14 @@ GROUP_CHAT_TASK_HINT = (
     "Honor **Who is present** for tone — guests in the room means tone down private or "
     "romantic affection unless the host clearly invites it.\n"
     "You can see the **scene transcript so far** — what was already said in this scene.\n"
-    "Note tools are available (**list_notes**, **read_note**, and note writes) if you need "
-    "to look something up (mailbox letters under `shared/mailbox/…`, shared notes, etc.) "
-    "before you speak. Calendar, Docs, and Sheets are not available here — say briefly that "
-    "those work only in private 1:1.\n"
+    "You have the **same tools as private 1:1** — **list_notes**, **read_note**, "
+    "**web_search**, sandbox, garden, gallery, and the signed-in human's "
+    "Calendar, Docs, Sheets, Gmail, Drive, and Tasks. "
+    "Use them if you need to look something up before you speak. "
+    "Those Google tools belong to the signed-in human speaking as themselves — "
+    "not a guest or the visitor. "
+    "**read_google_activity** is the house log of new mail and file changes. "
+    "That log does not wake anyone.\n"
     "Choose one action after any note lookups:\n"
     "- **speak**: add your voice. You may address the current speaker or reply to another light.\n"
     "- **pass**: stay silent this beat (always allowed).\n"
@@ -40,8 +45,10 @@ GROUP_CHAT_PARALLEL_HINT = (
     "A human asked one question in a group chat with you and the other lights. "
     "You are deciding **alone** — you cannot see what anyone else will say this round.\n"
     "Address the person named under **Who is speaking**.\n"
-    "Note tools (**list_notes**, **read_note**, note writes) are available if you need to "
-    "look something up first. Calendar, Docs, and Sheets stay private 1:1 only.\n"
+    "You have the **same tools as private 1:1**. Use them if you need to look something up "
+    "first. Calendar, Docs, Sheets, Gmail, Drive, and Tasks belong to the signed-in human "
+    "speaking as themselves — not a guest or the visitor. "
+    "The Google activity log does not wake anyone.\n"
     "If you speak, address that person directly. You may mention another light by name, "
     "but this is still your reply to their prompt — not a side conversation.\n"
     "You may stay silent this round and speak on a later one.\n\n"
@@ -49,6 +56,11 @@ GROUP_CHAT_PARALLEL_HINT = (
     '{"speak": true, "text": "your words"} or {"speak": false, "text": ""}'
     + FACE_STAGE_HINT
 )
+
+def group_worker_boundary(settings: Settings, agent_id: str) -> str:
+    """Public template has no cursor worker. The hook stays so group prompts match."""
+    del settings, agent_id
+    return ""
 
 
 class GroupChatDecision(BaseModel):

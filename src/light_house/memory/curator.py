@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 _FRESH_THOUGHT_PROTECT_SECONDS = 24 * 3600
 _MAX_PRUNE_BATCHES_PER_RUN = 100
 _LEARNINGS_NOTE_PATH = "memory/learnings.md"
+_LEARNINGS_INBOX_PATH = "memory/learnings.inbox.md"
+_LEARNINGS_INBOX_HEADING = "# Learnings inbox\n\n"
 _MAX_NOTE_PARAGRAPH_CHARS = 2_500
 
 _CURATOR_SYSTEM = (
@@ -44,7 +46,7 @@ _CURATOR_SYSTEM = (
     "delete_ids (array of document id strings to remove), "
     "fade_ids (array of ids to keep but mark as softer — optional), "
     "pin_facts (array of short bullet strings worth sacred pinning — optional), "
-    "note_paragraph (optional — only genuinely NEW insight for the learnings note; "
+    "note_paragraph (optional — only genuinely NEW insight for the learnings inbox; "
     "omit if themes repeat prior curator summaries; max ~120 words). "
     "Never invent facts. Do not summarize pinned sacred facts."
 )
@@ -549,12 +551,26 @@ class MemoryCurator:
             max_chars_per_write=self._settings.notes_max_chars_per_write,
         )
 
-    def _read_learnings_note(self, *, thread_id: str) -> str:
+    def _read_learnings_note(self, *, thread_id: str) -> str | None:
+        """Whole learnings file, '' if it does not exist, None if a rewrite would be unsafe."""
         writer = self._note_writer(thread_id=thread_id)
         try:
-            return writer.read(_LEARNINGS_NOTE_PATH)
-        except (ValueError, FileNotFoundError, OSError):
+            text = writer.read(_LEARNINGS_NOTE_PATH)
+        except FileNotFoundError:
             return ""
+        except (ValueError, OSError):
+            logger.warning(
+                "Curator will not rewrite learnings (unreadable) thread_id=%s",
+                thread_id,
+            )
+            return None
+        if text.startswith("[Note excerpt characters ") or text.startswith("[Note empty at offset "):
+            logger.warning(
+                "Curator will not rewrite learnings (partial read) thread_id=%s",
+                thread_id,
+            )
+            return None
+        return text
 
     def _write_learnings_note(self, *, thread_id: str, body: str) -> None:
         writer = self._note_writer(thread_id=thread_id)
@@ -618,7 +634,11 @@ class MemoryCurator:
         report: CuratorReport,
         pending_paragraph: str | None = None,
     ) -> None:
+        if not self._settings.memory_learnings_summarize_enabled:
+            return
         existing = self._read_learnings_note(thread_id=thread_id)
+        if existing is None:
+            return
         extra = len(pending_paragraph.strip()) + 2 if pending_paragraph and pending_paragraph.strip() else 0
         if not self._learnings_needs_consolidation(existing, extra_chars=extra):
             return
@@ -651,10 +671,11 @@ class MemoryCurator:
         if not block:
             return
 
-        existing = self._read_learnings_note(thread_id=thread_id)
-        if existing.strip():
-            body = existing.rstrip() + "\n\n" + block + "\n"
-        else:
-            body = "# Learnings\n\n" + block + "\n"
-        self._write_learnings_note(thread_id=thread_id, body=body)
+        writer = self._note_writer(thread_id=thread_id)
+        writer.append_preserving(
+            _LEARNINGS_INBOX_PATH,
+            block + "\n",
+            heading=_LEARNINGS_INBOX_HEADING,
+        )
         report.notes_appended += 1
+        report.actions.append("appended learnings inbox")

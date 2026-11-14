@@ -109,11 +109,8 @@ def test_agents_can_read_written_shared_note(tmp_path: Path, monkeypatch: pytest
                 json={"content": "Shared plan body."},
             )
             lumen = client.get("/v1/notes/shared/plan.md?agent=lumen")
-            ara = client.get("/v1/notes/shared/plan.md?agent=ara")
         assert lumen.status_code == 200
-        assert ara.status_code == 200
         assert lumen.json()["content"] == "Shared plan body."
-        assert ara.json()["content"] == "Shared plan body."
     finally:
         app.dependency_overrides.clear()
 

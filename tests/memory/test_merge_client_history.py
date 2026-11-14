@@ -42,11 +42,12 @@ def test_merge_uses_server_buffer_not_client_history():
         )
         assert len(messages) == 3
         assert isinstance(messages[0], HumanMessage)
-        assert messages[0].content == "phone user"
+        assert messages[0].content.endswith("phone user")
+        assert "stale pc user" not in messages[0].content
         assert isinstance(messages[1], AIMessage)
         assert messages[1].content == "phone reply"
         assert isinstance(messages[2], HumanMessage)
-        assert messages[2].content == "new question"
+        assert messages[2].content.endswith("new question")
 
 
 def test_merge_seeds_empty_buffer_from_client_once():
@@ -63,9 +64,9 @@ def test_merge_seeds_empty_buffer_from_client_once():
             latest_user="follow up",
         )
         assert len(messages) == 3
-        assert messages[0].content == "legacy user"
+        assert messages[0].content.endswith("legacy user")
         assert messages[1].content == "legacy assistant"
-        assert messages[2].content == "follow up"
+        assert messages[2].content.endswith("follow up")
 
         buffered = svc.load_thread_chat_history(thread_id)
         assert len(buffered) == 2
@@ -79,6 +80,7 @@ def test_merge_seeds_empty_buffer_from_client_once():
             latest_user="another",
         )
         assert len(messages2) == 3
-        assert messages2[0].content == "legacy user"
+        assert messages2[0].content.endswith("legacy user")
+        assert "wrong" not in messages2[0].content
         assert messages2[1].content == "legacy assistant"
-        assert messages2[2].content == "another"
+        assert messages2[2].content.endswith("another")

@@ -1,4 +1,4 @@
-"""Per-human calendar tools — only in 1:1 with an account holder who connected a calendar."""
+"""Per-human calendar tools — 1:1 or Group, for an account holder who connected a calendar."""
 
 from __future__ import annotations
 
@@ -40,20 +40,14 @@ CALENDAR_TOOL_NAMES = frozenset(
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
 
-_UNAVAILABLE_GROUP = (
-    "FAILED: Calendar tools are not available in group chat. "
-    "Tell the human gently that calendar access only works in a private 1:1 chat "
-    "with a light — not in the group room."
-)
-
 _UNAVAILABLE_GUEST = (
-    "FAILED: Calendar tools are not available while a guest is speaking. "
-    "Tell the guest briefly that calendar tools are only for signed-in household "
-    "accounts in private 1:1 chat — guests cannot use them."
+    "FAILED: Calendar tools are not available while a guest or visitor is speaking. "
+    "Tell them briefly that calendar tools are only for signed-in household "
+    "accounts — guests and the visitor seat cannot use them."
 )
 
 _UNAVAILABLE_NO_ACCOUNT = (
-    "FAILED: Calendar tools need a signed-in household account in private 1:1 chat. "
+    "FAILED: Calendar tools need a signed-in household account speaking as themselves. "
     "Tell the human calendar is unavailable in this context."
 )
 
@@ -132,11 +126,10 @@ def calendar_access_denied_reason(
 ) -> str | None:
     """Return a FAILED message if calendar tools must not run; else None."""
     channel = (chat_channel or "dm").strip().lower()
-    if channel == "group":
-        return _UNAVAILABLE_GROUP
-    if channel != "dm":
+    if channel not in {"dm", "group"}:
         return _UNAVAILABLE_NO_ACCOUNT
-    if speaker_id and _is_guest_speaker_id(str(speaker_id)):
+    sid = (speaker_id or "").strip()
+    if sid and (_is_guest_speaker_id(sid) or sid.lower() == "visitor"):
         return _UNAVAILABLE_GUEST
     if not (account_user_id or "").strip():
         return _UNAVAILABLE_NO_ACCOUNT
@@ -534,7 +527,7 @@ def build_calendar_tools() -> list[StructuredTool]:
             name="list_calendar_events",
             description=(
                 "List upcoming events on the signed-in human's connected calendar "
-                "(private 1:1 only; not group chat; not guests). "
+                "(1:1 or Group as that human; not guests or the visitor). "
                 "Uses whatever calendar they connected on their My tools page."
             ),
             func=lambda days=7, max_events=15: (
@@ -546,7 +539,7 @@ def build_calendar_tools() -> list[StructuredTool]:
             name="create_calendar_event",
             description=(
                 "Create an event on the signed-in human's connected calendar "
-                "(private 1:1 only; Google write support; not group chat; not guests)."
+                "(1:1 or Group as that human; Google write support; not guests or the visitor)."
             ),
             func=lambda title, start, end, description="", location="": (
                 "FAILED: create_calendar_event must run through the agent tool runner"

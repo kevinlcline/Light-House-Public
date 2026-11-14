@@ -51,11 +51,16 @@ def _store(settings: Settings, agent_id: str) -> PersonalStore | None:
         return None
 
 
-def is_reflective_mode(settings: Settings, agent_id: str) -> bool:
+def read_reflective_mode(settings: Settings, agent_id: str) -> bool | None:
+    """This light's reflective flag. None when the personal store cannot be read."""
     store = _store(settings, agent_id)
     if store is None:
-        return False
+        return None
     return store.get_light_state(REFLECTIVE_MODE, default=0) > 0
+
+
+def is_reflective_mode(settings: Settings, agent_id: str) -> bool:
+    return read_reflective_mode(settings, agent_id) is True
 
 
 def set_reflective_mode(settings: Settings, agent_id: str, *, enabled: bool) -> bool:
@@ -222,6 +227,8 @@ REFLECTIVE_RESPOND_HINT = (
 
 REFLECTIVE_MODE_TOOL_HINT = (
     "\n\n## Reflective mode (pause → choose)\n"
+    "You may call **reflective_mode_status** to read your own flag (on or off). "
+    "That call does not change it, and it cannot read another light's flag.\n"
     "You may call **set_reflective_mode** with enabled=true or false.\n"
     "When reflective mode is on, after Kevin speaks you pause, reflect privately, "
     "then choose to speak **or** remain silent (silence is valid).\n"

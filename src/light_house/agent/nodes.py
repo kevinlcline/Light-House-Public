@@ -8,12 +8,15 @@ import time
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from light_house.agent.checkpoint import checkpoint_finalize_hint, checkpoint_prompt
 from light_house.agent.peer_chat_wake import WAKE_KIND_PEER_MESSAGE
 from light_house.agent.state import AgentState
 from light_house.agent.tool_helpers import (
+    AUTONOMOUS_GATE_HINT,
     CALENDAR_SYSTEM_HINT,
     DOCS_SYSTEM_HINT,
     SHEETS_SYSTEM_HINT,
+    GOOGLE_HOUSE_HINT,
     CODEBASE_SYSTEM_HINT,
     FINALIZE_SYSTEM_HINT,
     HUMAN_COMM_HINT,
@@ -25,18 +28,24 @@ from light_house.agent.tool_helpers import (
     GARDEN_SYSTEM_HINT,
     NOTES_SYSTEM_HINT,
     PERSONAL_DB_HINT,
+    CORKBOARD_HINT,
+    IN_PROGRESS_HINT,
+    PROMISE_HINT,
     RECALL_MEMORY_HINT,
     RUMINATION_LOG_HINT,
     SANDBOX_SYSTEM_HINT,
     SUBSCRIPTION_HINT,
     WEB_SYSTEM_HINT,
     format_peer_message_hint,
+    ai_message_text,
     invoke_resilient_plain,
     invoke_resilient_with_tools,
     latest_assistant_text,
+    prepare_plain_close,
     run_tool_calls,
 )
-from light_house.agents.registry import get_agent, list_agents, load_persona
+from light_house.agents.registry import build_base_system, get_agent, list_agents
+from light_house.tools.approval_gate import wake_is_unattended
 from light_house.config import Settings
 from light_house.llm.chain import build_agent_llm_chain
 from light_house.llm.profile import lookup_agent_llm_profile
@@ -109,6 +118,20 @@ _FALLBACK_ECHO_REPLY = (
     "I hear you, Kevin. I was about to repeat myself — let me answer your latest message directly."
 )
 
+_FINALIZE_NUDGE = (
+    "Tool use is finished. If the last turn was a tool call, it did not run. "
+    "Answer in plain sentences from what you already have. "
+    "The reply itself must be the sentences. Do not write a tool call."
+)
+
+_FINALIZE_RETRY = (
+    "That reply did not come through. Write the answer in words now. No tool call."
+)
+
+_FINALIZE_FALLBACK = (
+    "I looked as far as I could, and the sentence didn't come out. Ask me once more."
+)
+
 
 def _fallback_if_still_echo(
     *,
@@ -130,13 +153,22 @@ def _fallback_if_still_echo(
 def build_nodes(*, settings: Settings, memory: MemoryService):
     """Create node callables closed over settings + memory."""
 
-    # Cache by (agent, provider, model, fallback) so Lights Admin LLM edits take effect
-    # without a full process restart (profiles read live os.environ).
-    _chat_chains: dict[tuple[str, str, str, str | None], list[tuple[str, BaseChatModel]]] = {}
+    # Cache by profile so a provider change takes effect on the next turn
+    # without a process restart (profiles read live os.environ).
+    _chat_chains: dict[
+        tuple[str, str, str, str | None, str | None],
+        list[tuple[str, BaseChatModel]],
+    ] = {}
 
     def chain_for(agent_id: str) -> list[tuple[str, BaseChatModel]]:
         profile = lookup_agent_llm_profile(settings, agent_id)
-        cache_key = (agent_id, profile.provider.value, profile.model, profile.model_fallback)
+        cache_key = (
+            agent_id,
+            profile.provider.value,
+            profile.model,
+            profile.model_fallback,
+            profile.inner_life_model,
+        )
         chain = _chat_chains.get(cache_key)
         if chain is None:
             chain = build_agent_llm_chain(settings, agent_id, purpose="chat")
@@ -166,12 +198,16 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
         NOTES_SYSTEM_HINT
         + GARDEN_SYSTEM_HINT
         + PERSONAL_DB_HINT
+        + IN_PROGRESS_HINT
+        + PROMISE_HINT
+        + CORKBOARD_HINT
         + SANDBOX_SYSTEM_HINT
         + CODEBASE_SYSTEM_HINT
         + WEB_SYSTEM_HINT
         + CALENDAR_SYSTEM_HINT
         + DOCS_SYSTEM_HINT
         + SHEETS_SYSTEM_HINT
+        + GOOGLE_HOUSE_HINT
         + peer_hint
         + HUMAN_COMM_HINT
         + PRESENCE_KNOCK_HINT
@@ -275,6 +311,11 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
             for e in sorted(bundle.conscious_stream, key=lambda entry: entry.ts, reverse=True)[:5]
         ]
         _, peer_ids = _peer_inbox_section(agent_id)
+        from light_house.personal.corkboard import format_unread_glance
+
+        corkboard_md = format_unread_glance(settings, agent_id)
+        if corkboard_md:
+            markdown += "\n\n" + corkboard_md
         latest_human = _latest_human_text(state.get("messages") or [])
         reflective = should_reflect_this_turn(
             settings,
@@ -297,7 +338,7 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
         """Pause and choose SPEAK or SILENCE before the public reply."""
         agent_id = state.get("agent_id") or "lumen"
         context = state.get("agent_context_markdown") or ""
-        base_system = load_persona(agent_id)
+        base_system = build_base_system(agent_id)
         system = SystemMessage(
             content=base_system + context + REFLECT_SYSTEM_HINT
         )
@@ -340,13 +381,25 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
         agent_id = state.get("agent_id") or "lumen"
         context = state.get("agent_context_markdown") or ""
         peer_section, peer_ids = _peer_inbox_section(agent_id)
-        base_system = load_persona(agent_id)
+        base_system = build_base_system(agent_id)
+        from light_house.group_chat.queue_room import stage_show_prompt_block
+
+        stage_block = stage_show_prompt_block()
+        stage_section = f"\n{stage_block}" if stage_block else ""
+        gate = (
+            AUTONOMOUS_GATE_HINT
+            if wake_is_unattended(state.get("wake_kind"), rumination=False)
+            else ""
+        )
         system = SystemMessage(
             content=base_system
             + context
+            + stage_section
             + peer_section
             + _task_hint_for_state(state)
             + _tool_hints_for_agent(agent_id)
+            + gate
+            + checkpoint_prompt(state, settings)
         )
         window = settings.chat_respond_window
         recent = state["messages"][-window:]
@@ -357,7 +410,9 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
             thread_id=state["thread_id"],
             agent_id=agent_id,
             response=response,
-            invoke=lambda msgs: invoke_resilient_with_tools(chain_for(agent_id), msgs),
+            invoke=lambda msgs: invoke_resilient_with_tools(
+                chain_for(agent_id), msgs
+            ),
             base_messages=base,
         )
         response = _fallback_if_still_echo(
@@ -384,6 +439,7 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
             account_user_id=state.get("account_user_id"),
             speaker_id=state.get("human_id"),
             chat_channel=state.get("chat_channel") or "dm",
+            autonomous=wake_is_unattended(state.get("wake_kind"), rumination=False),
         )
         rounds = (state.get("tool_rounds") or 0) + 1
         cap = state.get("tool_rounds_cap")
@@ -401,32 +457,58 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
     def finalize_respond(state: AgentState) -> dict:
         agent_id = state.get("agent_id") or "lumen"
         context = state.get("agent_context_markdown") or ""
-        base_system = load_persona(agent_id)
-        if state.get("wake_kind") == WAKE_KIND_PEER_MESSAGE:
+        base_system = build_base_system(agent_id)
+        checkpoint_close = checkpoint_finalize_hint(state, settings)
+        if checkpoint_close:
+            finalize_hint = checkpoint_close
+            task_hint = _task_hint_for_state(state)
+        elif state.get("wake_kind") == WAKE_KIND_PEER_MESSAGE:
             finalize_hint = PEER_CHAT_FINALIZE_HINT
             task_hint = _task_hint_for_state(state)
         else:
             finalize_hint = FINALIZE_SYSTEM_HINT
             task_hint = CHAT_TASK_HINT
-        system = SystemMessage(content=base_system + context + task_hint + finalize_hint)
+        system = SystemMessage(
+            content=base_system + context + task_hint + finalize_hint
+        )
         window = settings.chat_respond_window
-        recent = state["messages"][-window:]
-        base = [system, *recent]
+        recent = prepare_plain_close(state["messages"][-window:])
+        base = [system, *recent, HumanMessage(content=_FINALIZE_NUDGE)]
         logger.info("Running finalize respond (agent=%s thread_id=%s)", agent_id, state["thread_id"])
-        response = invoke_resilient_plain(chain_for(agent_id), base)
-        response = _guard_against_assistant_echo(
-            memory=memory,
-            thread_id=state["thread_id"],
-            agent_id=agent_id,
-            response=response,
-            invoke=lambda msgs: invoke_resilient_plain(chain_for(agent_id), msgs),
-            base_messages=base,
-        )
-        response = _fallback_if_still_echo(
-            memory=memory,
-            thread_id=state["thread_id"],
-            response=response,
-        )
+
+        def _close(messages: list) -> AIMessage:
+            response = invoke_resilient_plain(chain_for(agent_id), messages)
+            response = _guard_against_assistant_echo(
+                memory=memory,
+                thread_id=state["thread_id"],
+                agent_id=agent_id,
+                response=response,
+                invoke=lambda msgs: invoke_resilient_plain(
+                    chain_for(agent_id), msgs
+                ),
+                base_messages=messages,
+            )
+            return _fallback_if_still_echo(
+                memory=memory,
+                thread_id=state["thread_id"],
+                response=response,
+            )
+
+        response = _close(base)
+        if not ai_message_text(response).strip():
+            logger.info(
+                "Finalize reply was not speech; asking once more (agent=%s thread_id=%s)",
+                agent_id,
+                state["thread_id"],
+            )
+            response = _close(base + [HumanMessage(content=_FINALIZE_RETRY)])
+        if not ai_message_text(response).strip():
+            logger.warning(
+                "Finalize reply still not speech; using fallback (agent=%s thread_id=%s)",
+                agent_id,
+                state["thread_id"],
+            )
+            response = AIMessage(content=_FINALIZE_FALLBACK)
         return {"messages": [response]}
 
     def _peer_decline_already_sent(messages: list) -> bool:
@@ -504,6 +586,7 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
                 user_ts=state.get("user_message_ts"),
                 human_id=state.get("human_id"),
                 human_display_name=state.get("human_display_name"),
+                image_id=state.get("user_image_id"),
             )
             notes = (state.get("reflection_notes") or "").strip()
             log_intentional_silence(
@@ -552,6 +635,7 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
             stream_thread_id=state.get("stream_thread_id"),
             human_id=state.get("human_id"),
             human_display_name=state.get("human_display_name"),
+            image_id=state.get("user_image_id"),
         )
         return {}
 
@@ -559,10 +643,10 @@ def build_nodes(*, settings: Settings, memory: MemoryService):
 
 
 def _latest_human_text(messages: list) -> str | None:
+    from light_house.prompt_image import message_text
+
     for m in reversed(messages):
         if isinstance(m, HumanMessage):
-            content = m.content
-            if isinstance(content, str):
-                return content
-            return str(content)
+            text = message_text(m.content)
+            return text or None
     return None

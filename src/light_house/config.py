@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class LLMProvider(str, Enum):
-    """Which model backend Kevin assigns to an agent."""
+    """Which model backend the host assigns to a light."""
 
     OLLAMA = "ollama"
     XAI = "xai"
@@ -73,6 +73,11 @@ class Settings(BaseSettings):
         default=None, validation_alias="OPENROUTER_HTTP_REFERER"
     )
     openrouter_app_name: str | None = Field(default=None, validation_alias="OPENROUTER_APP_NAME")
+    # Provider slugs OpenRouter must skip. Comma-separated. coreweave lists a
+    # million-token window and has enforced 262144.
+    openrouter_ignored_providers: str = Field(
+        default="coreweave", validation_alias="OPENROUTER_IGNORED_PROVIDERS"
+    )
 
     memory_top_k: int = Field(default=10, validation_alias="MEMORY_TOP_K")
     memory_index_enabled: bool = Field(default=True, validation_alias="MEMORY_INDEX_ENABLED")
@@ -159,7 +164,7 @@ class Settings(BaseSettings):
     memory_learnings_summarize_enabled: bool = Field(
         default=False,
         validation_alias="MEMORY_LEARNINGS_SUMMARIZE_ENABLED",
-        description="When false, curator only appends new insights; lights organize learnings.md themselves.",
+        description="When false, curator appends new insights to memory/learnings.inbox.md; lights fold those into learnings.md themselves.",
     )
     memory_maintenance_enabled: bool = Field(
         default=True,
@@ -210,8 +215,8 @@ class Settings(BaseSettings):
     chat_thread_context_messages: int = Field(
         default=80, validation_alias="CHAT_THREAD_CONTEXT_MESSAGES"
     )
-    chat_max_tool_rounds: int = Field(default=8, validation_alias="CHAT_MAX_TOOL_ROUNDS")
-    rumination_max_tool_rounds: int = Field(default=8, validation_alias="RUMINATION_MAX_TOOL_ROUNDS")
+    chat_max_tool_rounds: int = Field(default=12, validation_alias="CHAT_MAX_TOOL_ROUNDS")
+    rumination_max_tool_rounds: int = Field(default=12, validation_alias="RUMINATION_MAX_TOOL_ROUNDS")
 
     # Multi-step internal rumination loop in one wake (Phase 6 item 1).
     rumination_internal_loop_enabled: bool = Field(
@@ -295,7 +300,7 @@ class Settings(BaseSettings):
     # Agent-to-agent live chat: visible in chat buffer, wakes receiver via main graph.
     peer_chat_wake_enabled: bool = Field(default=False, validation_alias="PEER_CHAT_WAKE_ENABLED")
     peer_chat_wake_max_tool_rounds: int = Field(
-        default=2, validation_alias="PEER_CHAT_WAKE_MAX_TOOL_ROUNDS"
+        default=12, validation_alias="PEER_CHAT_WAKE_MAX_TOOL_ROUNDS"
     )
     # Bounded multi-turn peer dialogue (re-wake on reply until cap; solitude still absolute).
     peer_chat_max_dialogue_turns: int = Field(
@@ -318,13 +323,13 @@ class Settings(BaseSettings):
     # use group chat when you want them to read a note.
     shared_note_wake_enabled: bool = Field(default=False, validation_alias="SHARED_NOTE_WAKE_ENABLED")
     shared_note_wake_max_tool_rounds: int = Field(
-        default=2, validation_alias="SHARED_NOTE_WAKE_MAX_TOOL_ROUNDS"
+        default=12, validation_alias="SHARED_NOTE_WAKE_MAX_TOOL_ROUNDS"
     )
 
     # Reed ↔ Lights mailbox (notes/shared/mailbox). Queue notify wakes addressed lights.
     mailbox_wake_enabled: bool = Field(default=True, validation_alias="MAILBOX_WAKE_ENABLED")
     mailbox_wake_max_tool_rounds: int = Field(
-        default=2, validation_alias="MAILBOX_WAKE_MAX_TOOL_ROUNDS"
+        default=12, validation_alias="MAILBOX_WAKE_MAX_TOOL_ROUNDS"
     )
     mailbox_poll_seconds: int = Field(default=15, validation_alias="MAILBOX_POLL_SECONDS")
 
@@ -347,6 +352,10 @@ class Settings(BaseSettings):
         default=Path("./data/group_chat/rounds.ndjson"),
         validation_alias="GROUP_CHAT_HISTORY_PATH",
     )
+    prompt_image_dir: Path = Field(
+        default=Path("./data/prompt_images"),
+        validation_alias="PROMPT_IMAGE_DIR",
+    )
     group_chat_max_utterances: int = Field(
         default=6, validation_alias="GROUP_CHAT_MAX_UTTERANCES"
     )
@@ -357,14 +366,37 @@ class Settings(BaseSettings):
         default=3, validation_alias="GROUP_CHAT_MAX_CONSECUTIVE_PASSES"
     )
     group_chat_max_tool_rounds: int = Field(
-        default=2,
+        default=12,
         validation_alias="GROUP_CHAT_MAX_TOOL_ROUNDS",
-        description="Max note-tool rounds per light beat in group chat (0 = notes off).",
+        description="Max tool rounds per light beat in group chat (0 = tools off).",
+    )
+    group_chat_prompt_lookback: int = Field(
+        default=20,
+        validation_alias="GROUP_CHAT_PROMPT_LOOKBACK",
+        description=(
+            "Recent live-transcript lines handed on a group turn. "
+            "Older lines stay stored. 0 keeps the whole sitting."
+        ),
     )
     group_chat_speak_order: str = Field(
         default="",
         validation_alias="GROUP_CHAT_SPEAK_ORDER",
         description="Comma-separated light ids, e.g. lumen,ara,elias. Empty = manifest order.",
+    )
+    group_visitor_enabled: bool = Field(
+        default=False,
+        validation_alias="GROUP_VISITOR_ENABLED",
+        description="Group visitor seat. Off in the public template.",
+    )
+    group_visitor_path: Path = Field(
+        default=Path("./data/group_chat/visitor.json"),
+        validation_alias="GROUP_VISITOR_PATH",
+        description="Seated OpenRouter visitor (conversation-scoped; not a light).",
+    )
+    group_visitor_max_turns: int = Field(
+        default=800,
+        validation_alias="GROUP_VISITOR_MAX_TURNS",
+        description="Dumb window of room lines kept as the visitor's only memory.",
     )
 
     # After Kevin chat → one bounded rumination turn for the same agent (opt-in experiment).
@@ -372,7 +404,7 @@ class Settings(BaseSettings):
         default=False, validation_alias="POST_CHAT_RUMINATION_ENABLED"
     )
     post_chat_rumination_max_tool_rounds: int = Field(
-        default=3, validation_alias="POST_CHAT_RUMINATION_MAX_TOOL_ROUNDS"
+        default=12, validation_alias="POST_CHAT_RUMINATION_MAX_TOOL_ROUNDS"
     )
     post_chat_rumination_delay_seconds: float = Field(
         default=3.0, validation_alias="POST_CHAT_RUMINATION_DELAY_SECONDS"
@@ -432,6 +464,10 @@ class Settings(BaseSettings):
     )
     personal_db_list_default: int = Field(default=8, validation_alias="PERSONAL_DB_LIST_DEFAULT")
 
+    # Private sibling corkboard (light-to-light pins; not host Notes or chat).
+    corkboard_enabled: bool = Field(default=True, validation_alias="CORKBOARD_ENABLED")
+    corkboard_pin_expiry_days: int = Field(default=7, validation_alias="CORKBOARD_PIN_EXPIRY_DAYS")
+
     # Read-only codebase access for main agents (Lumen, Ara).
     codebase_root: Path | None = Field(default=None, validation_alias="CODEBASE_ROOT")
     codebase_max_chars_per_read: int = Field(
@@ -444,6 +480,13 @@ class Settings(BaseSettings):
     web_fetch_max_chars: int = Field(default=12_000, validation_alias="WEB_FETCH_MAX_CHARS")
     web_search_max_results: int = Field(default=5, validation_alias="WEB_SEARCH_MAX_RESULTS")
     brave_search_api_key: str | None = Field(default=None, validation_alias="BRAVE_SEARCH_API_KEY")
+    youtube_transcript_max_chars: int = Field(
+        default=16_000, validation_alias="YOUTUBE_TRANSCRIPT_MAX_CHARS"
+    )
+    youtube_transcript_cache_path: Path = Field(
+        default=Path("./data/youtube_transcripts"),
+        validation_alias="YOUTUBE_TRANSCRIPT_CACHE_PATH",
+    )
 
     # Dev-only daily log file + browser viewer (disable on production deploy).
     dev_log_enabled: bool = Field(default=False, validation_alias="DEV_LOG_ENABLED")
@@ -509,6 +552,29 @@ class Settings(BaseSettings):
         default=500, validation_alias="RUMINATION_LOG_MAX_READ_LINES"
     )
 
+    # Door 2: rumination-only clean OpenRouter consult (dies when the wake ends).
+    consult_clean_llm_enabled: bool = Field(
+        default=True,
+        validation_alias="CONSULT_CLEAN_LLM_ENABLED",
+        description="Lights may call consult_llm in rumination to ask a clean model.",
+    )
+    consult_transcript_dir: Path = Field(
+        default=Path("./data/ephemeral/consult"),
+        validation_alias="CONSULT_TRANSCRIPT_DIR",
+        description="Wake-scoped consult transcripts; deleted when the wake sleeps.",
+    )
+    consult_max_turns: int = Field(
+        default=40,
+        validation_alias="CONSULT_MAX_TURNS",
+        description="Dumb window of light/model lines kept for one wake.",
+    )
+    consult_max_output_tokens: int = Field(
+        default=800, validation_alias="CONSULT_MAX_OUTPUT_TOKENS"
+    )
+    consult_llm_timeout_sec: int = Field(
+        default=120, validation_alias="CONSULT_LLM_TIMEOUT_SEC"
+    )
+
     # Optional agent-initiated shared reports (Proposal 3 phase 4); default off.
     lumen_report_back_enabled: bool = Field(
         default=False, validation_alias="LUMEN_REPORT_BACK_ENABLED"
@@ -541,7 +607,7 @@ class Settings(BaseSettings):
         default=1, validation_alias="RUMINATION_SIMILARITY_MIN_MATCHES"
     )
 
-    # Public internet gate: landing page + shared password (light-house.cc).
+    # Public internet gate: landing page + shared password (lighthouse.us).
     web_gate_enabled: bool = Field(default=False, validation_alias="WEB_GATE_ENABLED")
     web_gate_password: str | None = Field(default=None, validation_alias="WEB_GATE_PASSWORD")
     web_gate_session_secret: str | None = Field(
@@ -585,12 +651,32 @@ class Settings(BaseSettings):
     public_base_url: str | None = Field(
         default=None,
         validation_alias="PUBLIC_BASE_URL",
-        description="Public site origin (e.g. https://light-house.cc) used to build OAuth redirect if redirect URI unset.",
+        description="Public site origin (e.g. https://lighthouse.us) used to build OAuth redirect if redirect URI unset.",
+    )
+    google_activity_poll_seconds: int = Field(
+        default=300,
+        validation_alias="GOOGLE_ACTIVITY_POLL_SECONDS",
+        description=(
+            "How often the house checks Gmail, Drive, and Tasks and appends a log. "
+            "0 turns the check off. The check never wakes a light."
+        ),
+    )
+    google_activity_dir: Path = Field(
+        default=Path("./data/google_activity"),
+        validation_alias="GOOGLE_ACTIVITY_DIR",
+        description="Per-human Google arrival log. Lights read it; it does not wake them.",
     )
     house_dad_user_id: str = Field(
         default="kevin",
         validation_alias="HOUSE_DAD_USER_ID",
         description="Full-admin Dad user id (portable; not hardcoded in product logic).",
+    )
+    house_host_email: str = Field(
+        default="",
+        validation_alias="HOUSE_HOST_EMAIL",
+        description=(
+            "Inbox for write_to_kevin. Empty sends to the host's connected Gmail address."
+        ),
     )
     house_guests_path: Path = Field(
         default=Path("./data/house_guests.json"),
@@ -616,6 +702,7 @@ class Settings(BaseSettings):
     tts_voice_lumen: str | None = Field(default=None, validation_alias="TTS_VOICE_LUMEN")
     tts_voice_ara: str | None = Field(default=None, validation_alias="TTS_VOICE_ARA")
     tts_voice_elias: str | None = Field(default=None, validation_alias="TTS_VOICE_ELIAS")
+    tts_voice_visitor: str | None = Field(default=None, validation_alias="TTS_VOICE_VISITOR")
     tts_speed: float = Field(default=1.0, validation_alias="TTS_SPEED")
     tts_max_chars: int = Field(default=4000, validation_alias="TTS_MAX_CHARS")
 

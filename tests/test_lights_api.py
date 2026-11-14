@@ -49,5 +49,8 @@ def test_lights_list_no_store_headers(tmp_path: Path, monkeypatch: pytest.Monkey
             assert res.headers.get("cache-control") == "no-store"
             ids = [light["id"] for light in res.json()["lights"]]
             assert "elias" in ids
+            by_id = {light["id"]: light for light in res.json()["lights"]}
+            assert by_id["lumen"]["color"] == "#c4a574"
+            assert by_id["elias"]["color"].startswith("#")
     finally:
         app.dependency_overrides.clear()

@@ -213,7 +213,7 @@ def test_user_setup_uses_host_member_language() -> None:
 def test_index_does_not_duplicate_large_style_block() -> None:
     html = (REPO_ROOT / "index.html").read_text(encoding="utf-8")
     assert "<style>" not in html
-    assert 'href="/static/ui/theme.css"' in html
+    assert "/static/ui/theme.css" in html
 
 
 def test_notes_tree_toggle_not_only_in_menu() -> None:
@@ -278,8 +278,10 @@ def test_tts_drives_amplitude_lip_sync() -> None:
     assert "setMouthOpen" in tts
     assert "function setMouthOpen" in faces
     assert "is-lip-sync" in faces
-    assert "--mouth-open" in css
-    assert "is-lip-sync" in css
+    assert "drawPlasma" in faces
+    assert "speechLift" in faces
+    assert "plasma-ball" in css
+    assert "/ 0.30" in tts
 
 
 def test_tts_queues_auto_speak_instead_of_cutting_off() -> None:
@@ -297,10 +299,13 @@ def test_tts_queues_auto_speak_instead_of_cutting_off() -> None:
 def test_faces_have_soft_light_halo() -> None:
     faces = (UI_ROOT / "faces.js").read_text(encoding="utf-8")
     css = (UI_ROOT / "faces.css").read_text(encoding="utf-8")
-    assert 'class="face-halo"' in faces or "face-halo" in faces
-    assert "face-halo-outer" in faces
-    assert "face-halo-breathe" in css
-    assert "face-halo-speak" in css
+    assert "drawPlasma" in faces
+    assert "coronaHaze" in faces
+    assert "plasmaArcs" in faces
+    assert "plasmaLobes" in faces
+    assert "PLASMA_SKIN" in faces
+    assert "plasma-ball" in faces
+    assert "plasma-ball" in css
     assert "--face-glow" in faces
     assert "prefers-reduced-motion" in css
 
@@ -327,38 +332,29 @@ def test_faces_emote_from_stage_cues() -> None:
     tts = (UI_ROOT / "tts.js").read_text(encoding="utf-8")
     assert "emoteFromText" in text
     assert "emotionTimeline" in text
+    assert "PROSE_ACTION_RE" in text
+    assert "iterProseActions" in text
     assert "syncSpeakingProgress" in text
     assert "pruneTo" in text
     assert "forgetAgent" in text
-    assert "genderFromVoice" in text
-    assert "face-bow-hair" in text
-    assert "face-bow-tie" in text
-    assert "#f0a0b8" in text
-    assert "#d32f2f" in text
-    assert "52,12" in text
-    assert "32,64" in text
+    assert "intentOf" in text
+    assert "presenceOf" in text
+    assert "grainOf" in text
+    assert "face-bow" not in text
     assert "setVoices" in text
-    assert "is-idle-bob" in text or "is-idle-bob" in css
-    assert "face-bow-hair" in css
-    assert "face-gender-girl" in css
-    assert "face-gender-boy" in css
     assert "setVoices" in tts
-    assert "emo-smile" in css
-    assert "emo-bright" in css
-    assert "emo-anger" in css
-    assert "emo-kiss" in css
-    assert "emo-pause" in css
-    assert "emo-pause-smile" in css
-    assert "face-eye-closed" in css
+    assert "emo-' + name" in text
     assert "PAUSE_RE" in text
     assert "pause_smile" in text
-    assert "face-cheek-arc" in css
+    assert "CLOSED_EYE_HOLD_MS" in text
+    assert "scheduleClosedEyeReopen" in text
+    assert "const CLOSED_EYE_HOLD_MS = 1000" in text
+    assert "face-cheek" not in css
+    assert "face-eye" not in css
+    assert "face-mouth" not in css
     assert "chunkText" in tts
     assert "syncSpeakingProgress" in tts
-    assert "😊" in text
     assert "EMOJI_MAP" in text
-    assert "😘" in text
-    assert "😠" in text
     assert "STAGE_KEY" in text
     assert "setupStageToggle" in text
     assert "setStageVisible" in text

@@ -42,6 +42,32 @@ def is_dad(human: SessionHuman, settings: Settings) -> bool:
     return human.role == "dad" or human.user_id == dad_user_id(settings)
 
 
+def session_human_for_user_id(settings: Settings, user_id: str) -> SessionHuman | None:
+    """Household human for a verified user id (the OAuth return cookie has no role)."""
+    uid = (user_id or "").strip().lower()
+    if not uid:
+        return None
+    if uid == dad_user_id(settings):
+        dad = dad_user_id(settings)
+        return SessionHuman(
+            user_id=dad,
+            role="dad",
+            display_name=dad,
+            notes_access="all",
+            intro_for_lights="",
+        )
+    human = get_human(settings, uid)
+    if human is None or not human.enabled:
+        return None
+    return SessionHuman(
+        user_id=human.user_id,
+        role="sibling",
+        display_name=human.display_name,
+        notes_access=human.notes_access or "shared",
+        intro_for_lights=human.intro_for_lights,
+    )
+
+
 def session_human_from_payload(
     settings: Settings,
     payload: dict[str, object] | None,

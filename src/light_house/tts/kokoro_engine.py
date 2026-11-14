@@ -40,9 +40,12 @@ def voice_for_agent(settings: Settings, agent_id: str) -> str:
         "lumen": settings.tts_voice_lumen,
         "ara": settings.tts_voice_ara,
         "elias": settings.tts_voice_elias,
+        "visitor": settings.tts_voice_visitor,
     }
     if aid in env_overrides and env_overrides[aid]:
         return normalize_voice_id(env_overrides[aid], light_id=aid)
+    if aid == "visitor":
+        return default_voice_for_light("visitor")
     try:
         from light_house.lights.registry import get_light
 
@@ -68,8 +71,9 @@ def get_tts_status(settings: Settings) -> dict[str, object]:
         for light in list_lights(settings):
             per_light[light.id] = voice_for_agent(settings, light.id)
     except Exception:
-        for lid in ("lumen", "ara", "elias"):
+        for lid in ("lumen", "ara", "elias", "unnamed", "visitor"):
             per_light[lid] = voice_for_agent(settings, lid)
+    per_light.setdefault("visitor", voice_for_agent(settings, "visitor"))
     return {
         "enabled": bool(settings.tts_enabled),
         "ready": ready,

@@ -40,6 +40,9 @@ class CalendarConnectionPublic:
     auth_method: str | None = None  # "oauth" | "manual" | None
     docs_connected: bool = False
     sheets_connected: bool = False
+    gmail_connected: bool = False
+    drive_connected: bool = False
+    tasks_connected: bool = False
     scopes: tuple[str, ...] = ()
 
 
@@ -133,6 +136,25 @@ def _parse_calendar(raw: dict[str, Any] | None) -> CalendarConnection | None:
     )
 
 
+def list_google_connections(settings: Settings) -> list[tuple[str, CalendarConnection]]:
+    """Enabled Google connections, as (user_id, connection). No token values logged."""
+    with _LOCK:
+        data = _load(settings)
+        users = data.get("users") if isinstance(data.get("users"), dict) else {}
+        items = list(users.items())
+    found: list[tuple[str, CalendarConnection]] = []
+    for uid, user in items:
+        if not isinstance(user, dict):
+            continue
+        conn = _parse_calendar(user.get("calendar"))
+        if conn is None or conn.provider != "google" or not conn.enabled:
+            continue
+        if not conn.refresh_token:
+            continue
+        found.append((str(uid), conn))
+    return found
+
+
 def get_calendar_connection(settings: Settings, user_id: str) -> CalendarConnection | None:
     uid = _normalize_user_id(user_id)
     with _LOCK:
@@ -191,18 +213,32 @@ def calendar_public_view(settings: Settings, user_id: str) -> CalendarConnection
     has_secrets = False
     docs_connected = False
     sheets_connected = False
+    gmail_connected = False
+    drive_connected = False
+    tasks_connected = False
     if conn.provider == "google":
         has_secrets = _google_has_usable_secrets(settings, conn)
         from light_house.humans.google_calendar_oauth import (
             scope_grants_docs,
+            scope_grants_drive,
+            scope_grants_gmail,
+            scope_grants_gmail_send,
             scope_grants_sheets,
+            scope_grants_tasks_write,
         )
 
-        docs_connected = bool(
-            has_secrets and conn.enabled and scope_grants_docs(list(conn.scopes))
+        scopes = list(conn.scopes)
+        docs_connected = bool(has_secrets and conn.enabled and scope_grants_docs(scopes))
+        sheets_connected = bool(has_secrets and conn.enabled and scope_grants_sheets(scopes))
+        gmail_connected = bool(
+            has_secrets
+            and conn.enabled
+            and scope_grants_gmail(scopes)
+            and scope_grants_gmail_send(scopes)
         )
-        sheets_connected = bool(
-            has_secrets and conn.enabled and scope_grants_sheets(list(conn.scopes))
+        drive_connected = bool(has_secrets and conn.enabled and scope_grants_drive(scopes))
+        tasks_connected = bool(
+            has_secrets and conn.enabled and scope_grants_tasks_write(scopes)
         )
     elif conn.provider == "caldav":
         has_secrets = bool(conn.url and conn.username and conn.password)
@@ -218,6 +254,9 @@ def calendar_public_view(settings: Settings, user_id: str) -> CalendarConnection
         auth_method=conn.auth_method,
         docs_connected=docs_connected,
         sheets_connected=sheets_connected,
+        gmail_connected=gmail_connected,
+        drive_connected=drive_connected,
+        tasks_connected=tasks_connected,
         scopes=conn.scopes,
     )
 
@@ -366,12 +405,16 @@ def calendar_schema_for_ui() -> dict[str, Any]:
         "tool": "calendar",
         "providers": {
             "google": {
-                "preferred": "Click Connect Google (Calendar + Docs + Sheets; no tokens to paste).",
+                "preferred": (
+                    "Click Connect Google (Calendar, Docs, Sheets, Gmail, Drive, and Tasks; "
+                    "no tokens to paste)."
+                ),
                 "required_manual": ["provider", "client_id", "client_secret", "refresh_token"],
                 "optional": ["calendar_id", "enabled", "scopes"],
                 "defaults": {"calendar_id": "primary", "enabled": True},
                 "notes": (
-                    "Normal path: Connect Google button (Calendar + Docs). "
+                    "Normal path: Connect Google button "
+                    "(Calendar, Docs, Sheets, Gmail, Drive, Tasks). "
                     "Advanced/manual: paste your own OAuth client credentials."
                 ),
                 "example": {

@@ -150,7 +150,7 @@ def test_humans_api_create_and_list(tmp_path: Path, monkeypatch: pytest.MonkeyPa
             page = client.get("/user-setup.html")
             assert page.status_code == 200
             assert b"Introduce them to the lights" in page.content
-            assert b"Existing siblings" in page.content
+            assert b"Existing members" in page.content
 
             empty = client.get("/v1/humans")
             assert empty.status_code == 200

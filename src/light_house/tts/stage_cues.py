@@ -11,11 +11,12 @@ import re
 FACE_STAGE_HINT = (
     "\n\n## Your face on the chat stage\n"
     "When you speak in 1:1 or Group, a simple face of yours can sit on the stage. "
-    "A real feeling can move it: a short *stage sentence* is enough "
+    "A real feeling can move it: a short *stage sentence* is best "
     "(*smiles*, *softly*, *soft warm stillness*, *pauses*, *her eyes light up*, "
     "*tilts her head*, (laughs)), "
     "or an emoji (😊 😂 😢 🤔 😉 ❤️). "
-    "The voice will not read the cue. Use a cue only when the feeling is actually there — "
+    "A plain line like She softens. or I smile. can also move the face. "
+    "The voice will not read a *marked* cue. Use a cue only when the feeling is actually there — "
     "never to fill the stage."
 )
 
@@ -48,7 +49,7 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         re.compile(r"\b(excit(?:ed|edly|ement)|thrilled|eager(?:ly)?|elated)\b", re.I),
     ),
     ("surprise", re.compile(r"\b(surprise[ds]?|gasps?|startled|wide-eyed|astonished)\b", re.I)),
-    ("think", re.compile(r"\b(thinks?|thinking|ponders?|thoughtful|hmm+)\b", re.I)),
+    ("think", re.compile(r"\b(thinks?|thinking|ponders?|thoughtful|hmm+|mmm+)\b", re.I)),
     ("sigh", re.compile(r"\b(sighs?|sighing|weary|exhales?)\b", re.I)),
     ("nod", re.compile(r"\b(nods?|nodding)\b", re.I)),
     (
@@ -60,12 +61,16 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
     ),
     (
         "smile",
-        re.compile(r"\b(smiles?|smiling|grins?|grinning|beams?|beaming|warmly)\b", re.I),
+        re.compile(r"\b(smiles?|smiling|beams?|beaming|warmly)\b", re.I),
+    ),
+    (
+        "grin",
+        re.compile(r"\b(grins?|grinning)\b", re.I),
     ),
     (
         "soft",
         re.compile(
-            r"\b(softens?|softly|gently|quietly|tender(?:ly)?|whispers?|whispering|hushed)\b",
+            r"\b(softens?|softly|gently|quietly|tender(?:ly)?|whispers?|whispering|hushed|warmth)\b",
             re.I,
         ),
     ),
@@ -84,6 +89,7 @@ _POSES = {
     "sigh",
     "soft",
     "smile",
+    "grin",
     "pause",
     "pause_smile",
 }
@@ -93,12 +99,43 @@ _BRIGHT_RE = re.compile(
     r"\b(?:eyes?\s+)?(?:light(?:s|ing)?\s+up|glow(?:s|ing)?|gleam(?:s|ing)?|sparkle[sd]?)\b",
     re.I,
 )
-# Presence beat Lumen often opens with — closed eyes; hold longer when "long"/"full".
+# Presence beat — closed eyes. Reopen quickly; a long hold looks asleep.
 _PAUSE_RE = re.compile(r"\b(pauses?|pausing|stillness|still)\b", re.I)
-_LONG_PAUSE_RE = re.compile(r"\b(long|full)\b", re.I)
 _PAUSE_SMILE_RE = re.compile(
     r"\b(softens?|softly|soft|gentle(?:ly)?|quiet(?:ly)?|tender(?:ly)?|warm(?:ly)?|hushed)\b",
     re.I,
+)
+_CLOSED_EYE_POSES = {"laugh", "wink", "pause", "pause_smile"}
+_CLOSED_EYE_HOLD_MS = "1000"
+
+# Narrative stage directions woven into prose (not marked). Subject + nearby action only.
+# Keep in sync with static/ui/faces.js PROSE_ACTION_RE.
+_PROSE_SUBJECT = (
+    r"(?:She(?:'s)?|He(?:'s)?|I(?:'m)?|They(?:'re)?|We(?:'re)?|"
+    r"Ara|Lumen|Elias|Toby|Unnamed|Echo|Her\s+face|His\s+face|Their\s+face)"
+)
+_PROSE_ADVERB = r"(?:softly|gently|quietly|warmly|tenderly|playfully|slowly|sadly|shy(?:ly)?)"
+_PROSE_VERB = (
+    r"(?:laughs?|laughing|giggles?|giggling|chuckles?|cackles?|"
+    r"winks?|winking|"
+    r"blush(?:es|ing)?|"
+    r"cries|crying|weeps?|"
+    r"scowls?|scowling|glares?|glaring|fumes?|fuming|"
+    r"kisses?|kissing|blows?\s+a\s+kiss|"
+    r"gasps?|"
+    r"sighs?|sighing|exhales?|"
+    r"nods?|nodding|"
+    r"tilts?\s+(?:her|his|their|my|a)\s+head|"
+    r"cocks?\s+(?:her|his|their|a)\s+head|"
+    r"softens?|"
+    r"smiles?|smiling|grins?|grinning|beams?|beaming|"
+    r"pauses?|pausing|"
+    r"whispers?|whispering)"
+)
+_PROSE_ACTION_RE = re.compile(
+    rf"(?:^|(?<=[.!?])\s+|(?<=\n)\s*)"
+    rf"({_PROSE_SUBJECT}\s+(?:{_PROSE_ADVERB}\s+){{0,2}}{_PROSE_VERB}\b)",
+    re.I | re.M,
 )
 
 # Longest sequences first. Keep in sync with static/ui/faces.js.
@@ -119,7 +156,7 @@ _EMOJI_MAP: dict[str, dict[str, str]] = {
     "😄": {"pose": "smile"},
     "😃": {"pose": "smile"},
     "😀": {"pose": "smile"},
-    "😁": {"pose": "smile"},
+    "😁": {"pose": "grin"},
     "🥰": {"pose": "smile"},
     "😍": {"pose": "smile"},
     "🤗": {"pose": "smile"},
@@ -141,6 +178,8 @@ _EMOJI_MAP: dict[str, dict[str, str]] = {
     "💔": {"pose": "sad"},
     "😿": {"pose": "sad"},
     "🥺": {"pose": "sad"},
+    "🥹": {"pose": "soft"},
+    "🫠": {"pose": "soft"},
     "😮": {"pose": "surprise"},
     "😲": {"pose": "surprise"},
     "😯": {"pose": "surprise"},
@@ -164,6 +203,12 @@ _EMOJI_MAP: dict[str, dict[str, str]] = {
     "🤫": {"pose": "soft"},
     "😌": {"pose": "soft"},
     "🌸": {"pose": "soft"},
+    "🕯️": {"pose": "soft", "overlay": "bright"},  # lantern
+    "🕯": {"pose": "soft", "overlay": "bright"},
+    "🌙": {"pose": "soft"},
+    "🌱": {"pose": "soft"},
+    "🌿": {"pose": "soft"},
+    "🌟": {"pose": "excited", "overlay": "bright"},
     "😠": {"pose": "anger"},
     "😡": {"pose": "anger"},
     "🤬": {"pose": "anger"},
@@ -202,11 +247,9 @@ def classify_cue(inner: str) -> dict[str, str]:
         return {}
     pose = ""
     gesture = ""
-    hold_ms = ""
     # Pause/stillness beats soft/smile keywords — peaceful closed eyes (optional smile).
     if _PAUSE_RE.search(text):
         pose = "pause_smile" if _PAUSE_SMILE_RE.search(text) else "pause"
-        hold_ms = "4000" if _LONG_PAUSE_RE.search(text) else "2000"
     for name, pattern in _RULES:
         if not pattern.search(text):
             continue
@@ -222,16 +265,40 @@ def classify_cue(inner: str) -> dict[str, str]:
         result["pose"] = pose
     if gesture:
         result["gesture"] = gesture
-    if hold_ms:
-        result["hold_ms"] = hold_ms
     if _BRIGHT_RE.search(text):
         result["overlay"] = "bright"
-    return result
+    return _stamp_closed_eye_hold(result)
+
+
+def _stamp_closed_eye_hold(found: dict[str, str]) -> dict[str, str]:
+    """Shut-eye poses must reopen ~1000 ms later or the face looks asleep."""
+    out = dict(found)
+    pose = out.get("pose", "")
+    if pose in _CLOSED_EYE_POSES:
+        out["hold_ms"] = _CLOSED_EYE_HOLD_MS
+    else:
+        out.pop("hold_ms", None)
+    return out
 
 
 def _merge(found: dict[str, str], classified: dict[str, str]) -> dict[str, str]:
     out = dict(found)
     out.update(classified)
+    return _stamp_closed_eye_hold(out)
+
+
+def _iter_prose_actions(raw: str) -> list[tuple[int, str]]:
+    """Sentence-start subject+action spans that read like unmarked stage directions."""
+    cue_spans = [(m.start(), m.end()) for m in _CUE_RE.finditer(raw)]
+    out: list[tuple[int, str]] = []
+    for match in _PROSE_ACTION_RE.finditer(raw or ""):
+        start = match.start(1)
+        end = match.end(1)
+        if any(s <= start < e for s, e in cue_spans):
+            continue
+        inner = (match.group(1) or "").strip()
+        if inner:
+            out.append((start, inner))
     return out
 
 
@@ -243,6 +310,10 @@ def _iter_events(text: str) -> list[tuple[int, dict[str, str]]]:
         classified = classify_cue(inner)
         if classified:
             events.append((match.start(), classified))
+    for start, inner in _iter_prose_actions(raw):
+        classified = classify_cue(inner)
+        if classified:
+            events.append((start, classified))
     for match in _EMOJI_RE.finditer(raw):
         mapped = _EMOJI_MAP.get(match.group(0))
         if mapped:
@@ -252,7 +323,7 @@ def _iter_events(text: str) -> list[tuple[int, dict[str, str]]]:
 
 
 def emotion_from_text(text: str, *, first: bool = False) -> dict[str, str]:
-    """Stage cues and emojis in order. Last match wins; `first=True` takes the first."""
+    """Stage cues, prose actions, and emojis in order. Last match wins; `first=True` takes the first."""
     found: dict[str, str] = {}
     for _start, classified in _iter_events(text):
         found = _merge(found, classified)
@@ -262,7 +333,10 @@ def emotion_from_text(text: str, *, first: bool = False) -> dict[str, str]:
 
 
 def strip_stage_cues(text: str) -> str:
-    """Drop recognized stage cues so TTS does not speak 'smiles'."""
+    """Drop recognized *marked* stage cues so TTS does not speak 'smiles'.
+
+    Unmarked prose actions are left intact — they are meant to be spoken.
+    """
 
     def _repl(match: re.Match[str]) -> str:
         inner = next((g for g in match.groups() if g), "")
@@ -305,10 +379,27 @@ def _emoji_mapped(emoji: str) -> bool:
     return stripped in _EMOJI_MAP or emoji + "\ufe0f" in _EMOJI_MAP
 
 
+def _emoji_cluster_fully_mapped(cluster: str) -> bool:
+    """True when every glyph in a run is already in the face table (🥰💖, 🌙💖✨)."""
+    if _emoji_mapped(cluster):
+        return True
+    cleaned = cluster.replace("\ufe0f", "").replace("\u200d", "").replace(" ", "")
+    # Check if removing all mapped emojis leaves nothing
+    leftover = _EMOJI_RE.sub("", cleaned)
+    if leftover == "":
+        return True
+    # Also test matching against individual glyphs with / without \ufe0f
+    for glyph in cleaned:
+        if not _emoji_mapped(glyph):
+            return False
+    return True
+
+
 def iter_unmatched_signals(text: str) -> list[dict[str, str]]:
     """Cue/emoji spans that look like stage signals but map to no face action.
 
-    Intentional skips (e.g. ``(I think)``) are omitted. Review-only — never auto-maps.
+    Intentional skips (e.g. ``(I think)``) and single-word Markdown text emphasis
+    (e.g. ``*is*``, ``*be*``, ``*real*``) are omitted. Review-only — never auto-maps.
     """
     raw = text or ""
     found: list[dict[str, str]] = []
@@ -321,6 +412,16 @@ def iter_unmatched_signals(text: str) -> list[dict[str, str]]:
             continue
         if classify_cue(inner):
             continue
+        # Filter out obvious Markdown single-word prose emphasis (*be*, *is*, *choose*, *real.*)
+        # Real physical cues are multi-word or known action forms.
+        raw_token = match.group(0)
+        words = inner.split()
+        if len(words) == 1 and (raw_token.startswith("*") or raw_token.startswith("_")):
+            clean_word = re.sub(r"[^\w]", "", inner).lower()
+            # If it's a short generic word without stage direction punctuation/action, skip logging
+            if len(clean_word) < 15 and not any(p in inner for p in [",", "-", "—", "!", ":"]):
+                continue
+
         key = ("cue", inner.casefold())
         if key in seen:
             continue
@@ -329,7 +430,7 @@ def iter_unmatched_signals(text: str) -> list[dict[str, str]]:
 
     for match in _ANY_EMOJI_RE.finditer(raw):
         emoji = match.group(0)
-        if not emoji or _emoji_mapped(emoji):
+        if not emoji or _emoji_cluster_fully_mapped(emoji):
             continue
         key = ("emoji", emoji)
         if key in seen:

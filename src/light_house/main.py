@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import time
@@ -13,11 +14,11 @@ from typing import Annotated, Literal
 
 from urllib.parse import parse_qs, quote
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field, field_validator
-from starlette.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from pydantic import BaseModel, Field, field_validator, model_validator
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from light_house.agent.dream_scheduler import run_echo_dream_scheduler
@@ -34,6 +35,14 @@ from light_house.agent.post_chat_wake import (
 )
 from light_house.agent.rumination_wake import register_shared_note_wake
 from light_house.agent.tool_helpers import latest_assistant_text
+from light_house.prompt_image import (
+    PromptImageError,
+    PromptImageIn,
+    caption_for_prompt,
+    prompt_image_url,
+    read_prompt_image_bytes,
+    save_prompt_image,
+)
 from light_house.mailbox.letters import queue_notify, write_letter
 from light_house.mailbox.scheduler import ensure_mailbox_dirs, run_mailbox_scheduler
 from light_house.mailbox.wake import register_mailbox_wake
@@ -87,6 +96,7 @@ from light_house.lights.registry import (
 from light_house.agents.registry import get_agent, list_agents, validate_agent_id
 from light_house.humans import (
     HumansError,
+    SessionHuman,
     create_human,
     current_human,
     dad_user_id,
@@ -100,18 +110,22 @@ from light_house.humans import (
     purge_allows_for_human,
     require_dad,
     resolve_password_to_human,
+    session_human_for_user_id,
     set_dad_voice_id,
     set_light_allows_human,
     update_human,
     voice_id_for_human,
 )
 from light_house.humans.google_calendar_oauth import (
+    OAUTH_RETURN_COOKIE,
     GoogleOAuthError,
     build_google_authorize_url,
+    clear_oauth_return_cookie_header,
     exchange_code_for_tokens,
     google_oauth_configured,
     google_oauth_redirect_uri,
     missing_connect_scope_labels,
+    oauth_return_cookie_header,
     request_base_from_headers,
     resolve_granted_scopes,
     scopes_needed_for_connect,
@@ -163,6 +177,8 @@ _event_bus_task: asyncio.Task | None = None
 _event_bus_cancel: asyncio.Event | None = None
 _mailbox_task: asyncio.Task | None = None
 _mailbox_cancel: asyncio.Event | None = None
+_google_activity_task: asyncio.Task | None = None
+_google_activity_cancel: asyncio.Event | None = None
 
 
 def _configure_logging(settings: Settings) -> None:
@@ -185,6 +201,7 @@ async def lifespan(app: FastAPI):
     global _curator_task, _curator_cancel
     global _event_bus_task, _event_bus_cancel
     global _mailbox_task, _mailbox_cancel
+    global _google_activity_task, _google_activity_cancel
     settings = get_settings()
     reload_lights_manifest(settings)
     _configure_logging(settings)
@@ -388,6 +405,18 @@ async def lifespan(app: FastAPI):
             settings.mailbox_wake_enabled,
             settings.inner_life_enabled,
         )
+    if settings.google_activity_poll_seconds > 0:
+        from light_house.google_activity.scheduler import run_google_activity_scheduler
+
+        _google_activity_cancel = asyncio.Event()
+        _google_activity_task = asyncio.create_task(
+            run_google_activity_scheduler(
+                settings=settings,
+                cancel_event=_google_activity_cancel,
+            )
+        )
+    else:
+        logger.info("Google activity log off (GOOGLE_ACTIVITY_POLL_SECONDS=0)")
     yield
     shutdown_tts()
     if _event_bus_cancel is not None:
@@ -404,6 +433,13 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(_mailbox_task, timeout=10.0)
         except TimeoutError:
             _mailbox_task.cancel()
+    if _google_activity_cancel is not None:
+        _google_activity_cancel.set()
+    if _google_activity_task is not None:
+        try:
+            await asyncio.wait_for(_google_activity_task, timeout=10.0)
+        except TimeoutError:
+            _google_activity_task.cancel()
     if _curator_cancel is not None:
         _curator_cancel.set()
     if _curator_task is not None:
@@ -475,7 +511,8 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=32000)
+    message: str = Field(default="", max_length=32000)
+    image: PromptImageIn | None = None
     agent_id: str = Field(default="lumen", min_length=1, max_length=64)
     thread_id: str = Field(
         default="default",
@@ -498,12 +535,22 @@ class ChatRequest(BaseModel):
     @field_validator("message", mode="before")
     @classmethod
     def normalize_message(cls, value: object) -> object:
+        if value is None:
+            return ""
         if not isinstance(value, str):
             return value
         stripped = value.strip()
         if not stripped:
-            raise ValueError("message cannot be empty or whitespace-only")
+            return ""
         return _reject_nul_bytes(stripped, "message")
+
+    @model_validator(mode="after")
+    def require_words_or_image(self) -> ChatRequest:
+        try:
+            self.message = caption_for_prompt(self.message, has_image=self.image is not None)
+        except PromptImageError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
 
     @field_validator("speaker_id", "display_name", mode="before")
     @classmethod
@@ -548,6 +595,7 @@ class ChatHistoryMessage(BaseModel):
     ts: float
     from_agent_id: str | None = None
     from_display_name: str | None = None
+    image_url: str | None = None
 
 
 class ChatHistoryResponse(BaseModel):
@@ -647,6 +695,7 @@ class LightInfo(BaseModel):
     wants_kevin: bool = False  # soft knock for Dad (status bar)
     wants_family_meeting: bool = False  # light asked Dad to open Group
     family_meeting_topic: str = ""
+    color: str | None = None
 
 
 class LightsListResponse(BaseModel):
@@ -707,6 +756,9 @@ class CalendarToolPublic(BaseModel):
     auth_method: str | None = None
     docs_connected: bool = False
     sheets_connected: bool = False
+    gmail_connected: bool = False
+    drive_connected: bool = False
+    tasks_connected: bool = False
     scopes: list[str] = []
 
 
@@ -917,6 +969,7 @@ class AdminLightDetail(BaseModel):
     dreams: bool
     report_back: bool
     voice_id: str | None = None
+    color: str | None = None
 
 
 class AdminLightsManifestResponse(BaseModel):
@@ -936,6 +989,12 @@ class AdminCreateLightRequest(BaseModel):
     dreams: bool = True
     report_back: bool = False
     voice_id: str | None = Field(default=None, max_length=64)
+    color: str | None = Field(
+        default=None,
+        min_length=7,
+        max_length=7,
+        pattern=r"^#[0-9a-fA-F]{6}$",
+    )
     persona_content: str | None = Field(default=None, max_length=262_144)
     set_primary: bool = False
     llm_provider: str | None = None
@@ -952,6 +1011,7 @@ class AdminUpdateLightRequest(BaseModel):
     dreams: bool | None = None
     report_back: bool | None = None
     voice_id: str | None = Field(default=None, max_length=64)
+    color: str | None = Field(default=None, min_length=7, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$")
     set_primary: bool | None = None
 
 
@@ -1177,6 +1237,7 @@ def _lights_list_response(
                 family_meeting_topic=(
                     meeting_topic(settings, light.id) if show_knocks else ""
                 ),
+                color=light.color,
             )
             for light in list_lights(settings)
         ],
@@ -1214,6 +1275,9 @@ def _calendar_public_model(settings: Settings, user_id: str) -> CalendarToolPubl
         auth_method=view.auth_method,
         docs_connected=view.docs_connected,
         sheets_connected=view.sheets_connected,
+        gmail_connected=view.gmail_connected,
+        drive_connected=view.drive_connected,
+        tasks_connected=view.tasks_connected,
         scopes=list(view.scopes),
     )
 
@@ -1274,7 +1338,87 @@ def me_tools_google_start(
         )
     except GoogleOAuthError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return RedirectResponse(url, status_code=302, headers=_NO_STORE_HEADERS)
+    # A 302 straight to Google drops Set-Cookie on the phone. A house page
+    # stores the return cookie, then navigates.
+    return _google_hop_page(
+        url,
+        oauth_return_cookie_header(settings, user_id=human.user_id),
+    )
+
+
+_OAUTH_RETURN_LOST = (
+    "Your sign-in did not come back from Google. "
+    "Open My tools and tap Connect Google again."
+)
+
+
+def _google_hop_page(location: str, *cookie_headers: str) -> HTMLResponse:
+    """Land in the browser on this house, then go to location.
+
+    A 302 that is still part of Google's redirect chain arrives without the
+    sign-in cookie, and My tools then answers with Authentication required.
+    A page on this host makes the next step a same-site navigation.
+    """
+    safe = html.escape(location, quote=True)
+    script_url = json.dumps(location)
+    body = (
+        "<!DOCTYPE html>\n"
+        '<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="referrer" content="no-referrer">'
+        "<title>Returning to the house</title>"
+        f'<meta http-equiv="refresh" content="0;url={safe}">'
+        "</head><body>"
+        f'<p><a href="{safe}">Continue</a></p>'
+        f"<script>location.replace({script_url});</script>"
+        "</body></html>"
+    )
+    response = HTMLResponse(body, status_code=200, headers=_NO_STORE_HEADERS)
+    for header in cookie_headers:
+        response.headers.append("set-cookie", header)
+    return response
+
+
+def _google_oauth_redirect(location: str) -> HTMLResponse:
+    return _google_hop_page(location, clear_oauth_return_cookie_header())
+
+
+def _human_for_google_callback(
+    request: Request,
+    settings: Settings,
+    state_uid: str,
+) -> SessionHuman | HTMLResponse:
+    """Who clicked Connect.
+
+    Prefer the session when it survived the hop. If the gate is on and the
+    Lax session cookie did not come back from Google, accept the short-lived
+    return cookie only when its user matches the signed state.
+    """
+    try:
+        human = current_human(request, settings)
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+        human = None
+    if human is not None:
+        if state_uid != human.user_id:
+            return _google_oauth_redirect(
+                "/my-tools.html?calendar=error&detail=session_mismatch"
+            )
+        return human
+    return_token = request.cookies.get(OAUTH_RETURN_COOKIE) or ""
+    return_uid = ""
+    if return_token:
+        try:
+            return_uid = verify_oauth_state(settings, return_token)
+        except GoogleOAuthError:
+            return_uid = ""
+    if return_uid and return_uid == state_uid:
+        found = session_human_for_user_id(settings, return_uid)
+        if found is not None:
+            return found
+    return _google_oauth_redirect(
+        f"/my-tools.html?calendar=error&detail={quote(_OAUTH_RETURN_LOST)}"
+    )
 
 
 @app.get("/v1/me/tools/calendar/google/callback")
@@ -1287,32 +1431,22 @@ def me_tools_google_callback(
 ):
     """Google redirects here after the human consents."""
     if error:
-        return RedirectResponse(
-            f"/my-tools.html?calendar=error&detail={quote(error)}",
-            status_code=302,
-            headers=_NO_STORE_HEADERS,
+        return _google_oauth_redirect(
+            f"/my-tools.html?calendar=error&detail={quote(error)}"
         )
     if not code or not state:
-        return RedirectResponse(
-            "/my-tools.html?calendar=error&detail=missing_code",
-            status_code=302,
-            headers=_NO_STORE_HEADERS,
+        return _google_oauth_redirect(
+            "/my-tools.html?calendar=error&detail=missing_code"
         )
-    human = current_human(request, settings)
     try:
         state_uid = verify_oauth_state(settings, state)
     except GoogleOAuthError as exc:
-        return RedirectResponse(
-            f"/my-tools.html?calendar=error&detail={quote(str(exc))}",
-            status_code=302,
-            headers=_NO_STORE_HEADERS,
+        return _google_oauth_redirect(
+            f"/my-tools.html?calendar=error&detail={quote(str(exc))}"
         )
-    if state_uid != human.user_id:
-        return RedirectResponse(
-            "/my-tools.html?calendar=error&detail=session_mismatch",
-            status_code=302,
-            headers=_NO_STORE_HEADERS,
-        )
+    human = _human_for_google_callback(request, settings, state_uid)
+    if isinstance(human, HTMLResponse):
+        return human
     prior = get_calendar_connection(settings, human.user_id)
     prior_refresh = (prior.refresh_token if prior is not None else "") or ""
     prior_scopes = list(prior.scopes) if prior is not None else []
@@ -1338,24 +1472,16 @@ def me_tools_google_callback(
             scopes=scopes,
         )
     except (GoogleOAuthError, HumanToolsError) as exc:
-        return RedirectResponse(
-            f"/my-tools.html?calendar=error&detail={quote(str(exc))}",
-            status_code=302,
-            headers=_NO_STORE_HEADERS,
+        return _google_oauth_redirect(
+            f"/my-tools.html?calendar=error&detail={quote(str(exc))}"
         )
     view = calendar_public_view(settings, human.user_id)
     missing = missing_connect_scope_labels(list(view.scopes))
     if missing:
-        return RedirectResponse(
-            f"/my-tools.html?calendar=partial&missing={quote(','.join(missing))}",
-            status_code=302,
-            headers=_NO_STORE_HEADERS,
+        return _google_oauth_redirect(
+            f"/my-tools.html?calendar=partial&missing={quote(','.join(missing))}"
         )
-    return RedirectResponse(
-        "/my-tools.html?calendar=connected",
-        status_code=302,
-        headers=_NO_STORE_HEADERS,
-    )
+    return _google_oauth_redirect("/my-tools.html?calendar=connected")
 
 
 @app.put("/v1/me/tools/calendar", response_model=CalendarToolPublic)
@@ -1653,6 +1779,15 @@ def _chat_threads(
     return ui_tid, canonical
 
 
+def _store_prompt_image(settings: Settings, image: PromptImageIn | None) -> str | None:
+    if image is None:
+        return None
+    try:
+        return save_prompt_image(settings, image)
+    except PromptImageError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 def _build_chat_state(
     req: ChatRequest,
     dm_thread_id: str,
@@ -1661,6 +1796,7 @@ def _build_chat_state(
     human_id: str,
     human_display_name: str,
     account_user_id: str,
+    image_id: str | None = None,
 ) -> tuple[dict, int]:
     assert _memory is not None
     buffer_count = len(_memory.load_thread_chat_history(dm_thread_id))
@@ -1669,6 +1805,7 @@ def _build_chat_state(
         thread_id=dm_thread_id,
         client_history=client_history,
         latest_user=req.message,
+        latest_image_id=image_id,
     )
     state = {
         "messages": messages,
@@ -1692,6 +1829,7 @@ def _build_chat_state(
         "peer_message_id": None,
         "tool_rounds_cap": None,
         "user_message_ts": time.time(),
+        "user_image_id": image_id,
         "reflective_turn": False,
         "chose_silence": False,
         "reflection_notes": None,
@@ -1727,6 +1865,33 @@ def _subscription_command_response(
         thread_id=thread_id,
         agent_id=req.agent_id,
         retrieved_memories=[],
+    )
+
+
+def _early_chat_response(
+    req: ChatRequest,
+    *,
+    ui_thread_id: str,
+    stream_thread_id: str,
+    settings: Settings,
+    human_id: str,
+    human_display_name: str,
+) -> ChatResponse | None:
+    del ui_thread_id, human_id, human_display_name
+    return _subscription_command_response(req, stream_thread_id, settings)
+
+
+def _early_chat_stream(req: ChatRequest, response: ChatResponse):
+    async def early_stream():
+        yield (
+            f"event: started\ndata: {json.dumps({'agent_id': req.agent_id, 'thread_id': response.thread_id})}\n\n"
+        )
+        yield f"event: done\ndata: {json.dumps(response.model_dump())}\n\n"
+
+    return StreamingResponse(
+        early_stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
     )
 
 
@@ -1803,6 +1968,7 @@ def get_chat_history(
                 from_display_name = get_agent(m.from_agent_id, settings).display_name
             except KeyError:
                 from_display_name = m.from_agent_id
+        image_url = prompt_image_url(m.image_id) if m.role == "user" and m.image_id else None
         messages.append(
             ChatHistoryMessage(
                 role=m.role,
@@ -1810,6 +1976,7 @@ def get_chat_history(
                 ts=m.ts,
                 from_agent_id=m.from_agent_id,
                 from_display_name=from_display_name,
+                image_url=image_url,
             )
         )
     return JSONResponse(
@@ -1821,6 +1988,21 @@ def get_chat_history(
         ).model_dump(),
         headers=_NO_STORE_HEADERS,
     )
+
+
+@app.get("/v1/prompt-images/{image_id}")
+def get_prompt_image(
+    image_id: str,
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Serve a picture the host attached to a prompt. Session required."""
+    _ = current_human(request, settings)
+    found = read_prompt_image_bytes(settings, image_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    raw, media_type = found
+    return Response(content=raw, media_type=media_type, headers=_NO_STORE_HEADERS)
 
 
 @app.get("/v1/tts/status")
@@ -1846,15 +2028,28 @@ def tts_speak(
     body: TtsRequest,
     request: Request,
     settings: Annotated[Settings, Depends(_settings_dep)],
+    track: bool = Query(default=False),
 ):
-    """Synthesize WAV for a light's spoken reply (local Kokoro)."""
+    """Synthesize WAV for a light's spoken reply (local Kokoro).
+
+    Web keeps the WAV body. Studio can pass ``?track=1`` for a JSON envelope
+    with a five-shape lip track timed to that WAV.
+    """
     _ = current_human(request, settings)  # require session when gate is on
     if not settings.tts_enabled:
         raise HTTPException(status_code=404, detail="TTS disabled")
-    try:
-        validate_agent_id(body.agent_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from light_house.group_chat.visitor import VISITOR_SPEAKER_ID
+
+    speaker = (body.agent_id or "").strip().lower()
+    if speaker != VISITOR_SPEAKER_ID:
+        try:
+            validate_agent_id(body.agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from light_house.tts.text_prep import text_for_speech
+
+    if not text_for_speech(body.text, max_chars=settings.tts_max_chars):
+        return Response(status_code=204, headers=_NO_STORE_HEADERS)
     try:
         wav = synthesize_wav(
             settings,
@@ -1863,14 +2058,33 @@ def tts_speak(
             voice=body.voice,
         )
     except KokoroTtsError as exc:
+        if str(exc) == "Nothing to speak":
+            # Cue-only / emoji-only clips are not failures — the next sentence can play.
+            return Response(status_code=204, headers=_NO_STORE_HEADERS)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return Response(
-        content=wav,
-        media_type="audio/wav",
-        headers={
-            **_NO_STORE_HEADERS,
-            "Content-Disposition": 'inline; filename="speech.wav"',
+    if not track:
+        return Response(
+            content=wav,
+            media_type="audio/wav",
+            headers={
+                **_NO_STORE_HEADERS,
+                "Content-Disposition": 'inline; filename="speech.wav"',
+            },
+        )
+    import base64
+
+    from light_house.tts.lip_track import build_lip_track, duration_from_wav
+    from light_house.tts.text_prep import text_for_speech
+
+    duration = duration_from_wav(wav)
+    speak = text_for_speech(body.text, max_chars=settings.tts_max_chars)
+    return JSONResponse(
+        content={
+            "duration_s": round(duration, 3),
+            "cues": build_lip_track(speak, duration),
+            "wav_b64": base64.b64encode(wav).decode("ascii"),
         },
+        headers=_NO_STORE_HEADERS,
     )
 
 
@@ -1894,9 +2108,17 @@ def chat(
         dm_tid,
         len(req.message),
     )
-    sub_response = _subscription_command_response(req, canonical, settings)
-    if sub_response is not None:
-        return JSONResponse(content=sub_response.model_dump(), headers=_NO_STORE_HEADERS)
+    early = _early_chat_response(
+        req,
+        ui_thread_id=dm_tid,
+        stream_thread_id=canonical,
+        settings=settings,
+        human_id=speaker_id,
+        human_display_name=speaker_display_name,
+    )
+    if early is not None:
+        return JSONResponse(content=early.model_dump(), headers=_NO_STORE_HEADERS)
+    image_id = _store_prompt_image(settings, req.image)
     state, buffer_count = _build_chat_state(
         req,
         dm_tid,
@@ -1904,6 +2126,7 @@ def chat(
         human_id=speaker_id,
         human_display_name=speaker_display_name,
         account_user_id=human.user_id,
+        image_id=image_id,
     )
     assert _graph is not None
     try:
@@ -1945,15 +2168,17 @@ async def chat_stream(
         dm_tid,
         len(req.message),
     )
-    sub_response = _subscription_command_response(req, canonical, settings)
-    if sub_response is not None:
-        async def subscription_stream():
-            yield (
-                f"event: started\ndata: {json.dumps({'agent_id': req.agent_id, 'thread_id': canonical})}\n\n"
-            )
-            yield f"event: completed\ndata: {json.dumps(sub_response.model_dump())}\n\n"
-
-        return StreamingResponse(subscription_stream(), media_type="text/event-stream")
+    early = _early_chat_response(
+        req,
+        ui_thread_id=dm_tid,
+        stream_thread_id=canonical,
+        settings=settings,
+        human_id=speaker_id,
+        human_display_name=speaker_display_name,
+    )
+    if early is not None:
+        return _early_chat_stream(req, early)
+    image_id = _store_prompt_image(settings, req.image)
     state, buffer_count = _build_chat_state(
         req,
         dm_tid,
@@ -1961,6 +2186,7 @@ async def chat_stream(
         human_id=speaker_id,
         human_display_name=speaker_display_name,
         account_user_id=human.user_id,
+        image_id=image_id,
     )
     assert _graph is not None
 
@@ -2259,20 +2485,74 @@ class GroupQueueJoinRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=40)
 
 
+class GroupStageSpokenRequest(BaseModel):
+    speaker_id: str | None = Field(default=None, max_length=40)
+
+
 class GroupUtterRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=32000)
+    message: str = Field(default="", max_length=32000)
+    image: PromptImageIn | None = None
     speaker_id: str | None = Field(default=None, max_length=40)
     display_name: str | None = Field(default=None, max_length=40)
 
     @field_validator("message", mode="before")
     @classmethod
     def normalize_utter_message(cls, value: object) -> object:
+        if value is None:
+            return ""
         if not isinstance(value, str):
             return value
         stripped = value.strip()
         if not stripped:
-            raise ValueError("message cannot be empty or whitespace-only")
+            return ""
         return _reject_nul_bytes(stripped, "message")
+
+    @model_validator(mode="after")
+    def require_words_or_image(self) -> GroupUtterRequest:
+        try:
+            self.message = caption_for_prompt(self.message, has_image=self.image is not None)
+        except PromptImageError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+
+class GroupSittingRequest(BaseModel):
+    light_ids: list[str] = Field(default_factory=list)
+    stage: bool | None = Field(
+        default=None,
+        description="True when Light-House Studio landscape is the stage (table/list Show hold).",
+    )
+
+    @field_validator("light_ids")
+    @classmethod
+    def normalize_sitting_ids(cls, value: list[str]) -> list[str]:
+        if len(value) > 32:
+            raise ValueError("too many lights")
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            sid = (item or "").strip().lower()
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            cleaned.append(sid)
+        return cleaned
+
+
+class GroupVisitorSeatRequest(BaseModel):
+    model: str = Field(..., min_length=3, max_length=120)
+    display_name: str = Field(..., min_length=1, max_length=40)
+    web: bool = False
+
+    @field_validator("model", "display_name", mode="before")
+    @classmethod
+    def normalize_visitor_fields(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("cannot be empty")
+        return _reject_nul_bytes(stripped, "visitor field")
 
 
 @app.get("/v1/group-chat/forum")
@@ -2289,6 +2569,8 @@ async def group_chat_forum_status(
     present = _group_present_from_house(human, settings)
     await set_present(present)
     status = snapshot()
+    if not settings.group_visitor_enabled:
+        status = {**status, "visitor_enabled": False, "visitor": None}
     return JSONResponse(
         content={
             **status,
@@ -2344,6 +2626,62 @@ async def group_chat_queue_leave(
     return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
 
 
+@app.post("/v1/group-chat/queue/next")
+async def group_chat_queue_next(
+    request: Request,
+    req: GroupQueueJoinRequest,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Host on the floor names the next speaker by tapping an offstage face."""
+    from light_house.group_chat.queue_room import queue_next
+    from light_house.group_chat.visitor import VISITOR_SPEAKER_ID
+
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    _ = current_human(request, settings)
+    speaker_id = (req.speaker_id or "").strip().lower()
+    if not speaker_id:
+        raise HTTPException(status_code=422, detail="speaker_id is required")
+    kind = "visitor" if speaker_id == VISITOR_SPEAKER_ID else "light"
+    status = await queue_next(
+        kind=kind,
+        speaker_id=speaker_id,
+        display_name=req.display_name or speaker_id,
+    )
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+@app.post("/v1/group-chat/stage/release")
+async def group_chat_stage_release(
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Host cleared the markdown modal — the held light yields."""
+    from light_house.group_chat.queue_room import release_stage_hold
+
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    _ = current_human(request, settings)
+    status = await release_stage_hold()
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+@app.post("/v1/group-chat/stage/spoken")
+async def group_chat_stage_spoken(
+    request: Request,
+    req: GroupStageSpokenRequest,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Studio or web finished speaking the light still on the floor — next may begin."""
+    from light_house.group_chat.queue_room import acknowledge_spoken
+
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    _ = current_human(request, settings)
+    status = await acknowledge_spoken(speaker_id=req.speaker_id)
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
 @app.post("/v1/group-chat/utter")
 async def group_chat_utter(
     request: Request,
@@ -2362,17 +2700,227 @@ async def group_chat_utter(
         display_name=req.display_name,
     )
     await set_present(_group_present_from_house(human, settings))
+    image_id = _store_prompt_image(settings, req.image)
     try:
         status = await utter_human(
             speaker_id=speaker_id,
             display_name=display_name,
             text=req.message,
             account_user_id=human.user_id,
+            image_id=image_id,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+@app.post("/v1/group-chat/sitting")
+async def group_chat_sitting_set(
+    request: Request,
+    req: GroupSittingRequest,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Studio sitting cast: only these lights may be woken by a Group prompt."""
+    from light_house.group_chat.queue_room import set_seated_lights
+
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    current_human(request, settings)
+    status = await set_seated_lights(req.light_ids, stage=req.stage)
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+class GroupStageClientRequest(BaseModel):
+    studio: bool = False
+
+
+@app.post("/v1/group-chat/stage/client")
+async def group_chat_stage_client(
+    request: Request,
+    req: GroupStageClientRequest,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Web Group is not a Show stage; Studio landscape is."""
+    from light_house.group_chat.queue_room import set_studio_stage
+
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    current_human(request, settings)
+    status = await set_studio_stage(req.studio)
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+class StudioShowRequest(BaseModel):
+    url_or_id: str = Field(..., min_length=1, max_length=512)
+    start: str | float = Field(..., description="In point on the source clock (12:00 or seconds)")
+    end: str | float = Field(..., description="Out point on the source clock")
+    title: str = Field(default="", max_length=200)
+
+
+@app.get("/v1/studio/youtube/cues")
+def studio_youtube_cues(
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+    url: str = "",
+    refresh: bool = False,
+):
+    """Timed YouTube captions for the Studio clip picker."""
+    from light_house.group_chat.studio_show import load_cues_for_studio, studio_show_error
+
+    current_human(request, settings)
+    if not url.strip():
+        raise HTTPException(status_code=422, detail="url is required")
+    try:
+        payload = load_cues_for_studio(settings, url, refresh=refresh)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=studio_show_error(exc)) from exc
+    return JSONResponse(content=payload, headers=_NO_STORE_HEADERS)
+
+
+@app.put("/v1/studio/show")
+async def studio_show_put(
+    request: Request,
+    req: StudioShowRequest,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    """Put a YouTube span on the sitting so seated lights receive the text."""
+    from light_house.group_chat.queue_room import set_stage_show
+    from light_house.group_chat.studio_show import build_stage_show, studio_show_error
+
+    current_human(request, settings)
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    try:
+        clip = build_stage_show(
+            settings,
+            url_or_id=req.url_or_id,
+            start=req.start,
+            end=req.end,
+            title=req.title,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=studio_show_error(exc)) from exc
+    status = await set_stage_show(clip)
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+@app.delete("/v1/studio/show")
+async def studio_show_delete(
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    from light_house.group_chat.queue_room import set_stage_show
+
+    current_human(request, settings)
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    status = await set_stage_show(None)
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+def _require_group_visitor(settings: Settings) -> None:
+    if not settings.group_chat_enabled:
+        raise HTTPException(status_code=503, detail="Group chat is disabled")
+    if not settings.group_visitor_enabled:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+@app.get("/v1/group-chat/visitor")
+def group_chat_visitor_get(
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    from light_house.group_chat.visitor import load_active_visitor
+
+    _require_group_visitor(settings)
+    current_human(request, settings)
+    seated = load_active_visitor(settings)
+    return JSONResponse(
+        content={"visitor": seated.public() if seated is not None else None},
+        headers=_NO_STORE_HEADERS,
+    )
+
+
+@app.post("/v1/group-chat/visitor")
+async def group_chat_visitor_seat(
+    request: Request,
+    req: GroupVisitorSeatRequest,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    from light_house.group_chat.queue_room import snapshot
+    from light_house.group_chat.visitor import VisitorError, seat_visitor
+
+    _require_group_visitor(settings)
+    current_human(request, settings)
+    try:
+        convo = seat_visitor(
+            settings,
+            model=req.model,
+            display_name=req.display_name,
+            web=req.web,
+        )
+    except VisitorError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    status = snapshot()
+    status["visitor"] = convo.public()
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+@app.post("/v1/group-chat/visitor/reset")
+async def group_chat_visitor_reset(
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    from light_house.group_chat.queue_room import clear_visitor_from_forum
+    from light_house.group_chat.visitor import VisitorError, reset_visitor
+
+    _require_group_visitor(settings)
+    current_human(request, settings)
+    try:
+        convo = reset_visitor(settings)
+    except VisitorError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    status = await clear_visitor_from_forum()
+    status["visitor"] = convo.public()
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+@app.delete("/v1/group-chat/visitor")
+async def group_chat_visitor_end(
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    from light_house.group_chat.queue_room import clear_visitor_from_forum
+    from light_house.group_chat.visitor import end_visitor
+
+    _require_group_visitor(settings)
+    current_human(request, settings)
+    ended = end_visitor(settings)
+    status = await clear_visitor_from_forum()
+    status["visitor"] = None
+    status["ended"] = ended
+    return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
+
+
+@app.post("/v1/group-chat/visitor/queue")
+async def group_chat_visitor_queue(
+    request: Request,
+    settings: Annotated[Settings, Depends(_settings_dep)],
+):
+    from light_house.group_chat.queue_room import enqueue_seated_visitor
+
+    _require_group_visitor(settings)
+    current_human(request, settings)
+    try:
+        status = await enqueue_seated_visitor(invite_kind="opt_in")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return JSONResponse(content=status, headers=_NO_STORE_HEADERS)
 
 
@@ -3130,6 +3678,7 @@ def post_admin_light(
             dreams=body.dreams,
             report_back=body.report_back,
             voice_id=body.voice_id,
+            color=body.color,
             persona_content=body.persona_content,
             set_primary=body.set_primary,
             llm_provider=body.llm_provider,
@@ -3187,6 +3736,7 @@ def patch_admin_light(
             dreams=body.dreams,
             report_back=body.report_back,
             voice_id=body.voice_id,
+            color=body.color,
             set_primary=body.set_primary,
         )
     except LightsAdminError as exc:

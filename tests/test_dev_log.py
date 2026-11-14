@@ -110,8 +110,16 @@ def test_read_dev_log_tail_truncates() -> None:
         path.unlink(missing_ok=True)
 
 
-def test_dev_log_api_returns_404_when_disabled(tmp_path: Path) -> None:
-    settings = _test_settings(tmp_path, DEV_LOG_ENABLED=False, LIGHT_HOUSE_ENV="production")
+def test_dev_log_api_returns_404_when_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _test_settings(
+        tmp_path,
+        DEV_LOG_ENABLED=False,
+        LIGHT_HOUSE_ENV="production",
+        WEB_GATE_ENABLED=False,
+    )
+    monkeypatch.setattr("light_house.web_gate.get_settings", lambda: settings)
     app.dependency_overrides[_settings_dep] = lambda: settings
     try:
         with TestClient(app) as client:
@@ -121,7 +129,9 @@ def test_dev_log_api_returns_404_when_disabled(tmp_path: Path) -> None:
         app.dependency_overrides.clear()
 
 
-def test_dev_log_api_returns_tail_when_enabled(tmp_path: Path) -> None:
+def test_dev_log_api_returns_tail_when_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     log_path = tmp_path / "dev.log"
     log_path.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
     settings = _test_settings(
@@ -129,7 +139,9 @@ def test_dev_log_api_returns_tail_when_enabled(tmp_path: Path) -> None:
         DEV_LOG_ENABLED=True,
         DEV_LOG_PATH=str(log_path),
         DEV_LOG_MAX_TAIL_LINES=2000,
+        WEB_GATE_ENABLED=False,
     )
+    monkeypatch.setattr("light_house.web_gate.get_settings", lambda: settings)
     app.dependency_overrides[_settings_dep] = lambda: settings
     try:
         with TestClient(app) as client:

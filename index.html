@@ -3,16 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store">
     <title>Light-House</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
-    <script src="/static/ui/theme-init.js"></script>
-    <link rel="stylesheet" href="/static/ui/theme.css">
-    <link rel="stylesheet" href="/static/ui/base.css">
-    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
-    <link rel="stylesheet" href="/static/ui/chat.css?v=chrome2">
-    <link rel="stylesheet" href="/static/ui/faces.css?v=emo12">
-    <link rel="stylesheet" href="/static/ui/markdown.css">
+    <script src="/static/ui/theme-init.js?v=cssfix3"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css?v=cssfix3">
+    <link rel="stylesheet" href="/static/ui/base.css?v=cssfix3">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=stage-window">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=work1">
+    <link rel="stylesheet" href="/static/ui/faces.css?v=stage-window">
+    <link rel="stylesheet" href="/static/ui/markdown.css?v=cssfix3">
+    <script>
+        /* If a poisoned cache left stylesheets empty, refetch with a fresh query. */
+        (function () {
+            function chatCssApplied() {
+                var probe = document.createElement('div');
+                probe.className = 'chat-container';
+                probe.style.cssText = 'position:absolute;left:-9999px;top:0;';
+                document.documentElement.appendChild(probe);
+                var ok = getComputedStyle(probe).display === 'flex';
+                probe.remove();
+                return ok;
+            }
+            function recover() {
+                if (chatCssApplied()) return;
+                document.querySelectorAll('link[rel="stylesheet"][href*="/static/ui/"]').forEach(function (link) {
+                    var href = link.getAttribute('href') || '';
+                    var base = href.split('?')[0];
+                    link.href = base + '?recover=' + Date.now();
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', recover);
+            } else {
+                recover();
+            }
+            window.addEventListener('load', recover);
+        })();
+    </script>
 </head>
 <body class="layout-locked">
     <div class="chat-container">
@@ -39,7 +68,10 @@
 
         <div class="chat-input">
             <textarea id="input" placeholder="Type a message… (Enter to send, Shift+Enter for new line)" rows="2"></textarea>
+            <div id="image-preview" class="prompt-image-preview" hidden></div>
             <div class="chat-input-toolbar">
+                <button id="image-attach" type="button" class="chat-chrome-toggle">Image</button>
+                <input id="image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
                 <button id="send" type="button">Send</button>
                 <div class="chat-input-toggles" role="group" aria-label="Stage and voice">
                     <button type="button" class="chat-chrome-toggle" id="stage-toggle" data-stage-toggle data-compact aria-pressed="true">Stage</button>
@@ -87,15 +119,16 @@
 
     <script src="/static/ui/theme.js"></script>
     <script src="/static/ui/me.js"></script>
-    <script src="/static/ui/lights.js"></script>
+    <script src="/static/ui/lights.js?v=color1"></script>
     <script src="/static/ui/house-guests.js?v=speakfocus1"></script>
     <script src="/static/ui/persona-proposals.js"></script>
     <script src="/static/ui/markdown.js?v=notelinks1"></script>
-    <script src="/static/ui/menu.js?v=house3"></script>
+    <script src="/static/ui/menu.js?v=house5"></script>
     <script src="/static/ui/admin.js"></script>
-    <script src="/static/ui/faces.js?v=emo12"></script>
-    <script src="/static/ui/tts.js?v=queue1"></script>
+    <script src="/static/ui/faces.js?v=stage-window"></script>
+    <script src="/static/ui/tts.js?v=spokenack1"></script>
     <script src="/static/ui/bubble-actions.js?v=copy1"></script>
+    <script src="/static/ui/prompt-image.js?v=image1"></script>
     <script>
         const AGENT_KEY = 'light_house_agent_id';
         const THREAD_KEY = 'light_house_thread_id';
@@ -110,14 +143,24 @@
         const messagesDiv = document.getElementById('messages');
         const input = document.getElementById('input');
         const sendBtn = document.getElementById('send');
+        const promptImage = LightHouse.promptImage.bind({
+            button: document.getElementById('image-attach'),
+            fileInput: document.getElementById('image-file'),
+            preview: document.getElementById('image-preview'),
+            textarea: input,
+            onError: (msg) => addMessage(msg, 'error'),
+        });
         const houseStatusEl = document.getElementById('house-status');
         const knockStatusEl = document.getElementById('knock-status');
         const meetingStatusEl = document.getElementById('meeting-status');
         const SPEAK_AS_STORAGE_KEY = 'lh_chat_speak_as';
         let speakBar = null;
         const agentSelect = document.getElementById('agent-select');
+        const workWindow = null;
 
         let agentId = localStorage.getItem(AGENT_KEY) || '';
+        let suppressAgentChange = false;
+        let ignoreAgentChangeUntil = 0;
 
         function agentsFromApi(list) {
             return LightHouse.lights.agentsFromApi(list, null, {
@@ -127,14 +170,21 @@
         }
 
         function populateAgentSelect() {
-            LightHouse.lights.populateSelect(agentSelect, {
-                agents: AGENTS,
-                agentOrder: AGENT_ORDER,
-                agentId,
-                error: lightsLoadError,
-                includeGroup: true,
-            });
-            agentId = agentSelect.value || agentId;
+            suppressAgentChange = true;
+            try {
+                LightHouse.lights.populateSelect(agentSelect, {
+                    agents: AGENTS,
+                    agentOrder: AGENT_ORDER,
+                    agentId,
+                    error: lightsLoadError,
+                    includeGroup: true,
+                });
+                if (agentId && agentSelect.value !== agentId) {
+                    agentSelect.value = agentId;
+                }
+            } finally {
+                suppressAgentChange = false;
+            }
         }
 
         function renderKnockStatus() {
@@ -229,26 +279,53 @@
         }
 
         async function loadLights() {
+            const keptId = agentId;
+            const keptAgents = AGENTS;
+            const keptOrder = AGENT_ORDER.slice();
             lightsLoadError = null;
             try {
                 const data = await LightHouse.lights.fetchEnabled();
                 AGENT_ORDER = data.agentOrder;
                 AGENTS = agentsFromApi(data.list);
+                if (
+                    LightHouse.faces &&
+                    typeof LightHouse.faces.setColors === 'function'
+                ) {
+                    LightHouse.faces.setColors(data.colors || {});
+                }
+                if (LightHouse.faces && typeof LightHouse.faces.setNames === 'function') {
+                    const names = {};
+                    Object.keys(AGENTS).forEach((id) => {
+                        names[id] = AGENTS[id].displayName;
+                    });
+                    LightHouse.faces.setNames(names);
+                }
                 if (!AGENTS[agentId] || AGENTS[agentId].allowed === false) {
-                    const firstAllowed = AGENT_ORDER.find(
-                        (id) => AGENTS[id] && AGENTS[id].allowed !== false
-                    );
-                    agentId = firstAllowed || GROUP_AGENT_ID;
+                    const saved = keptId || localStorage.getItem(AGENT_KEY) || '';
+                    if (saved && AGENTS[saved] && AGENTS[saved].allowed !== false) {
+                        agentId = saved;
+                    } else {
+                        const firstAllowed = AGENT_ORDER.find(
+                            (id) => AGENTS[id] && AGENTS[id].allowed !== false
+                        );
+                        agentId = firstAllowed || GROUP_AGENT_ID;
+                    }
                 }
             } catch (err) {
-                AGENTS = {};
-                AGENT_ORDER = [];
-                lightsLoadError = err.message || 'Failed to load lights';
-            } finally {
-                if (!AGENTS[agentId] && agentId !== GROUP_AGENT_ID) {
-                    agentId = AGENT_ORDER[0] || Object.keys(AGENTS)[0] || '';
+                if (Object.keys(keptAgents).length) {
+                    AGENTS = keptAgents;
+                    AGENT_ORDER = keptOrder;
+                    agentId = keptId;
+                } else {
+                    AGENTS = {};
+                    AGENT_ORDER = [];
+                    agentId = keptId || localStorage.getItem(AGENT_KEY) || '';
+                    lightsLoadError = err.message || 'Failed to load lights';
                 }
-                if (agentId) localStorage.setItem(AGENT_KEY, agentId);
+            } finally {
+                if (!lightsLoadError && agentId && AGENTS[agentId]) {
+                    localStorage.setItem(AGENT_KEY, agentId);
+                }
                 populateAgentSelect();
                 renderKnockStatus();
                 renderMeetingStatus();
@@ -331,6 +408,7 @@
                         content: m.content,
                         from_agent_id: m.from_agent_id || null,
                         from_display_name: m.from_display_name || null,
+                        image_url: m.image_url || null,
                     }))
                     .slice(-maxHistory);
                 saveHistory();
@@ -373,7 +451,7 @@
                     if (msg.role === 'peer') {
                         addPeerMessage(msg, false);
                     } else {
-                        addMessage(msg.content, messageKind(msg.role), false);
+                        addMessage(msg.content, messageKind(msg.role), false, '', msg.image_url);
                     }
                 } catch (err) {
                     console.warn('Failed to render chat message:', err);
@@ -489,9 +567,21 @@
             speakBar.setGuests(guests);
         }
 
-        function addMessage(text, kind, scroll = true, speakerLabel) {
+        function addMessage(text, kind, scroll = true, speakerLabel, imageUrl) {
             const div = document.createElement('div');
             div.className = `message ${kind}`;
+            if (
+                kind !== 'user' &&
+                kind !== 'error' &&
+                kind !== 'house' &&
+                kind !== 'peer' &&
+                AGENTS[kind] &&
+                AGENTS[kind].color &&
+                LightHouse.lights &&
+                typeof LightHouse.lights.applyBubbleColor === 'function'
+            ) {
+                LightHouse.lights.applyBubbleColor(div, AGENTS[kind].color);
+            }
             if (kind === 'user' && speakerLabel) {
                 const label = document.createElement('div');
                 label.className = 'peer-label';
@@ -502,6 +592,9 @@
             body.className = 'message-body';
             setMessageContent(body, text, kind);
             div.appendChild(body);
+            if (imageUrl && LightHouse.promptImage) {
+                LightHouse.promptImage.appendToBubble(div, imageUrl);
+            }
             if (kind !== 'error' && kind !== 'house' && String(text || '').trim()) {
                 if (
                     LightHouse.bubbleActions &&
@@ -600,7 +693,18 @@
             return { events, rest };
         }
 
-        async function consumeChatStream(res) {
+        function applyStreamEvents(events, onWork) {
+            let donePayload = null;
+            let errorDetail = null;
+            for (const event of events) {
+                if (event.type === 'work' && onWork) onWork(event.data);
+                if (event.type === 'error') errorDetail = event.data.detail || 'Chat failed';
+                if (event.type === 'done') donePayload = event.data;
+            }
+            return { donePayload, errorDetail };
+        }
+
+        async function consumeChatStream(res, onWork) {
             const reader = res.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -616,17 +720,17 @@
                 }
                 const parsed = parseSseBlocks(buffer);
                 buffer = parsed.rest;
-                for (const event of parsed.events) {
-                    if (event.type === 'error') errorDetail = event.data.detail || 'Chat failed';
-                    if (event.type === 'done') donePayload = event.data;
-                }
+                const applied = applyStreamEvents(parsed.events, onWork);
+                if (applied.errorDetail) errorDetail = applied.errorDetail;
+                if (applied.donePayload) donePayload = applied.donePayload;
             }
 
             if (buffer.trim()) {
                 const event = parseSseBlock(buffer);
                 if (event) {
-                    if (event.type === 'error') errorDetail = event.data.detail || 'Chat failed';
-                    if (event.type === 'done') donePayload = event.data;
+                    const applied = applyStreamEvents([event], onWork);
+                    if (applied.errorDetail) errorDetail = applied.errorDetail;
+                    if (applied.donePayload) donePayload = applied.donePayload;
                 }
             }
 
@@ -653,18 +757,22 @@
 
         async function sendMessage() {
             const text = input.value.trim();
-            if (!text || sendBtn.disabled) return;
+            const image = promptImage.payload();
+            if ((!text && !image) || sendBtn.disabled) return;
             const speaker = selectedSpeaker();
+            const message = text || 'See the attached image.';
+            const previewImg = document.querySelector('#image-preview img');
+            const previewSrc = image && previewImg ? previewImg.src : '';
 
             LightHouse.tts.stop();
+            if (workWindow) workWindow.clear();
             const agent = currentAgent();
-            history.push({ role: 'user', content: text });
-            saveHistory();
+            history.push({ role: 'user', content: message, image_url: previewSrc || null });
             const showLabel =
                 speaker.speaker_id !== LightHouse.houseGuests.accountSpeakerId(me)
                     ? speaker.display_name
                     : '';
-            addMessage(text, 'user', true, showLabel);
+            addMessage(message, 'user', true, showLabel, previewSrc || null);
             input.value = '';
             resizeInput();
             setLoading(true);
@@ -683,6 +791,7 @@
                         history: [],
                         speaker_id: speaker.speaker_id,
                         display_name: speaker.display_name,
+                        ...(image ? { image } : {}),
                     }),
                 });
                 if (!res.ok) {
@@ -697,10 +806,14 @@
                     addMessage(`Error: ${msg}`, 'error');
                     return;
                 }
-                const payload = await consumeChatStream(res);
+                const payload = await consumeChatStream(res, function (ev) {
+                    if (workWindow) workWindow.push(ev);
+                });
+                if (workWindow) workWindow.close();
+                promptImage.clear();
                 const synced = await fetchHistoryFromServer();
                 if (!synced) {
-                    mergeChatResult(text, payload);
+                    mergeChatResult(message, payload);
                 }
                 const reply = typeof payload.reply === 'string' ? payload.reply.trim() : '';
                 if (reply) {
@@ -708,6 +821,7 @@
                 }
             } catch (e) {
                 LightHouse.tts.stop();
+                if (workWindow) workWindow.fail(e instanceof Error ? e.message : 'The turn stopped.');
                 renderHistory();
                 const msg = e instanceof Error ? e.message : 'Error connecting to Light-House';
                 addMessage(msg.startsWith('Error:') ? msg : `Error: ${msg}`, 'error');
@@ -729,6 +843,15 @@
         sendBtn.addEventListener('click', sendMessage);
 
         agentSelect.addEventListener('change', () => {
+            if (suppressAgentChange) return;
+            if (Date.now() < ignoreAgentChangeUntil) {
+                if (agentId && agentSelect.value !== agentId) {
+                    suppressAgentChange = true;
+                    agentSelect.value = agentId;
+                    suppressAgentChange = false;
+                }
+                return;
+            }
             if (agentSelect.value === GROUP_AGENT_ID) {
                 window.location.href = '/group.html';
                 return;
@@ -790,14 +913,29 @@
             },
         });
 
+        function holdChatStill() {
+            ignoreAgentChangeUntil = Date.now() + 1000;
+            if (agentId && agentSelect.value !== agentId) {
+                suppressAgentChange = true;
+                agentSelect.value = agentId;
+                suppressAgentChange = false;
+            }
+        }
+
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && !sendBtn.disabled) {
+            if (document.visibilityState !== 'visible') return;
+            holdChatStill();
+            if (!sendBtn.disabled) {
                 loadLights().then(() => updateAgentUi());
                 fetchHistoryFromServer();
                 LightHouse.tts.refreshServerStatus();
                 refreshHouseGuests();
                 if (me && me.is_dad) personaProposals.refresh();
             }
+        });
+
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted) holdChatStill();
         });
 
         async function init() {

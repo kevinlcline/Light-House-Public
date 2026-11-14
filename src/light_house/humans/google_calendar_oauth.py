@@ -1,4 +1,4 @@
-"""House-level Google OAuth for one-click Calendar + Docs + Sheets (stupid-simple UX)."""
+"""House-level Google OAuth for one-click Calendar, Docs, Sheets, Gmail, Drive, and Tasks."""
 
 from __future__ import annotations
 
@@ -24,17 +24,26 @@ GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
 GOOGLE_DOCUMENTS_SCOPE = "https://www.googleapis.com/auth/documents"
 GOOGLE_SPREADSHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 GOOGLE_DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
-# One Connect button grants Calendar + Docs + Sheets (+ Drive read for listing).
+GOOGLE_GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+GOOGLE_GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+GOOGLE_TASKS_SCOPE = "https://www.googleapis.com/auth/tasks"
+# One Connect button. Drive stays read-only. Gmail can be read and sent. Tasks can be changed.
 GOOGLE_CONNECT_SCOPES = " ".join(
     (
         GOOGLE_CALENDAR_SCOPE,
         GOOGLE_DOCUMENTS_SCOPE,
         GOOGLE_SPREADSHEETS_SCOPE,
         GOOGLE_DRIVE_READONLY_SCOPE,
+        GOOGLE_GMAIL_READONLY_SCOPE,
+        GOOGLE_GMAIL_SEND_SCOPE,
+        GOOGLE_TASKS_SCOPE,
     )
 )
 CALLBACK_PATH = "/v1/me/tools/calendar/google/callback"
 STATE_TTL_SEC = 600
+# Set on Connect, sent on Google's cross-site return. The session cookie is
+# SameSite=Lax and often does not arrive on that hop.
+OAUTH_RETURN_COOKIE = "lh_google_oauth"
 
 
 class GoogleOAuthError(ValueError):
@@ -91,6 +100,38 @@ def sign_oauth_state(settings: Settings, *, user_id: str) -> str:
     body = _b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     sig = _b64url(hmac.new(secret.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest())
     return f"{body}.{sig}"
+
+
+def oauth_return_cookie_header(settings: Settings, *, user_id: str) -> str:
+    """Short-lived cookie so the Google return can be tied to who clicked Connect.
+
+    SameSite=None and Secure are required: the browser comes back from
+    accounts.google.com, and Lax cookies are not reliable on that navigation.
+    """
+    token = sign_oauth_state(settings, user_id=user_id)
+    return "; ".join(
+        (
+            f"{OAUTH_RETURN_COOKIE}={token}",
+            f"Max-Age={STATE_TTL_SEC}",
+            f"Path={CALLBACK_PATH}",
+            "HttpOnly",
+            "SameSite=None",
+            "Secure",
+        )
+    )
+
+
+def clear_oauth_return_cookie_header() -> str:
+    return "; ".join(
+        (
+            f"{OAUTH_RETURN_COOKIE}=",
+            "Max-Age=0",
+            f"Path={CALLBACK_PATH}",
+            "HttpOnly",
+            "SameSite=None",
+            "Secure",
+        )
+    )
 
 
 def verify_oauth_state(settings: Settings, state: str) -> str:
@@ -291,6 +332,12 @@ def missing_connect_scope_labels(scopes: list[str] | None) -> list[str]:
         missing.append("docs")
     if GOOGLE_SPREADSHEETS_SCOPE not in have:
         missing.append("sheets")
+    if not scope_grants_drive(have):
+        missing.append("drive")
+    if not scope_grants_gmail(have) or not scope_grants_gmail_send(have):
+        missing.append("gmail")
+    if not scope_grants_tasks_write(have):
+        missing.append("tasks")
     return missing
 
 
@@ -306,6 +353,58 @@ def scope_grants_sheets(scopes: list[str] | None) -> bool:
     return GOOGLE_SPREADSHEETS_SCOPE in scopes or any(
         s.endswith("/auth/spreadsheets") for s in scopes
     )
+
+
+def _scope_set(scopes: list[str] | None) -> set[str]:
+    return {s.strip() for s in (scopes or []) if str(s).strip()}
+
+
+def scope_grants_drive(scopes: list[str] | None) -> bool:
+    have = _scope_set(scopes)
+    if not have:
+        return False
+    return any(
+        s == GOOGLE_DRIVE_READONLY_SCOPE
+        or s.endswith("/auth/drive.readonly")
+        or s.endswith("/auth/drive")
+        or s.endswith("/auth/drive.metadata.readonly")
+        for s in have
+    )
+
+
+def scope_grants_gmail(scopes: list[str] | None) -> bool:
+    """Read access. Send is a separate scope."""
+    have = _scope_set(scopes)
+    return any(
+        s.endswith("/auth/gmail.readonly")
+        or s.endswith("/auth/gmail.modify")
+        or s.endswith("/auth/mail.google.com")
+        or s == "https://mail.google.com/"
+        for s in have
+    )
+
+
+def scope_grants_gmail_send(scopes: list[str] | None) -> bool:
+    have = _scope_set(scopes)
+    return any(
+        s.endswith("/auth/gmail.send")
+        or s.endswith("/auth/gmail.modify")
+        or s.endswith("/auth/mail.google.com")
+        or s == "https://mail.google.com/"
+        for s in have
+    )
+
+
+def scope_grants_tasks(scopes: list[str] | None) -> bool:
+    have = _scope_set(scopes)
+    return any(
+        s.endswith("/auth/tasks") or s.endswith("/auth/tasks.readonly") for s in have
+    )
+
+
+def scope_grants_tasks_write(scopes: list[str] | None) -> bool:
+    have = _scope_set(scopes)
+    return any(s.endswith("/auth/tasks") and not s.endswith(".readonly") for s in have)
 
 
 def scope_grants_calendar(scopes: list[str] | None) -> bool:

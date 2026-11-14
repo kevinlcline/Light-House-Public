@@ -62,4 +62,6 @@ def split_speech_chunks(
             rest = rest[cut:].strip()
         if rest:
             chunks.append(rest)
-    return [c for c in chunks if c]
+    from light_house.tts.text_prep import text_for_speech
+
+    return [c for c in chunks if c and text_for_speech(c)]

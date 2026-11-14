@@ -117,6 +117,30 @@ def test_task_hint_labels() -> None:
     assert task_hint_label(None) == "scheduled"
 
 
+def test_tool_round_defaults_match_the_chair(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in (
+        "CHAT_MAX_TOOL_ROUNDS",
+        "RUMINATION_MAX_TOOL_ROUNDS",
+        "PEER_CHAT_WAKE_MAX_TOOL_ROUNDS",
+        "GROUP_CHAT_MAX_TOOL_ROUNDS",
+        "MAILBOX_WAKE_MAX_TOOL_ROUNDS",
+        "SHARED_NOTE_WAKE_MAX_TOOL_ROUNDS",
+        "POST_CHAT_RUMINATION_MAX_TOOL_ROUNDS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    settings = Settings(_env_file=None)
+    got = {
+        "chat": settings.chat_max_tool_rounds,
+        "rumination": settings.rumination_max_tool_rounds,
+        "peer": settings.peer_chat_wake_max_tool_rounds,
+        "group": settings.group_chat_max_tool_rounds,
+        "mailbox": settings.mailbox_wake_max_tool_rounds,
+        "shared_note": settings.shared_note_wake_max_tool_rounds,
+        "post_chat": settings.post_chat_rumination_max_tool_rounds,
+    }
+    assert got == {name: 12 for name in got}
+
+
 def test_run_rumination_sets_wake_kind_and_meditation_cap(settings: Settings) -> None:
     graph = MagicMock()
     _run_rumination(graph=graph, thread_id="t1", agent_id="lumen", settings=settings)

@@ -66,16 +66,16 @@ def test_buffer_to_langchain_uses_tags() -> None:
                 ),
                 BufferedMessage(
                     role="peer",
-                    content="Hi from Ara",
+                    content="Hi from Lumen",
                     ts=2.0,
-                    from_agent_id="ara",
+                    from_agent_id="lumen",
                 ),
             ]
         )
         assert "[human · Kevin · dad · id=kevin]" in msgs[0].content
         assert "Hi from Dad" in msgs[0].content
-        assert "[sibling-light · Ara · id=ara]" in msgs[1].content
-        assert "Hi from Ara" in msgs[1].content
+        assert "[sibling-light · Lumen · id=lumen]" in msgs[1].content
+        assert "Hi from Lumen" in msgs[1].content
 
 
 def test_format_helpers_include_body() -> None:

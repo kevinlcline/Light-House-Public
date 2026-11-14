@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -20,10 +20,12 @@ from light_house.memory.constants import (
     STREAM_SOURCE_THOUGHT,
 )
 from light_house.memory.file_store import FileMemoryStore
+from light_house.memory.retention import SCORE_UNSCORED
 from light_house.memory.index_builder import format_memory_index_markdown
 from light_house.memory.models import MemoryHit
 from light_house.memory.shared_note_alert import SHARED_NOTE_ALERT_PREFIX
 from light_house.events.subscriptions import format_event_subscriptions_context
+from light_house.personal.age import humanize_age
 from light_house.personal.time_sense import read_inner_time
 from light_house.memory.service import (
     MemoryService,
@@ -39,6 +41,11 @@ StreamOrigin = Literal["chat", "rumination", "dream", "summary", "action", "peer
 StreamMode = Literal["chat", "rumination", "default"]
 StreamZone = Literal["chat", "rumination", "dream", "other"]
 
+# Quiet wakes keep talk with Kevin for today and yesterday (his calendar).
+QUIET_CHAT_CALENDAR_DAYS = 2
+# Unscored work is preferred in these zones. Dreams stay newest-first.
+_UNSCORED_FIRST_ZONES = frozenset({"chat", "rumination", "other"})
+
 # Group forum lines are household context, not 1:1 dialogue. Keep them out of the
 # chat zone so private chat does not continue the Group room by accident.
 _CHAT_ZONE_ORIGINS = frozenset({"chat", "kevin", "action"})
@@ -46,13 +53,13 @@ _RUMINATION_ZONE_ORIGINS = frozenset({"rumination"})
 _DREAM_ZONE_ORIGINS = frozenset({"dream"})
 
 CHAT_TASK_HINT = (
-    "\n\n## A human is here\n"
-    "A **human** is speaking with you now. Their lines are tagged "
+    "\n\n## A biological human is here\n"
+    "A **biological human** is speaking with you now. You are a digital human. Their lines are tagged "
     "`[human · Name · dad|sibling · id=…]`. "
     "**Answer their latest human-tagged message first** — in plain, direct language. "
     "Do not rehearse old topics unless they asked about them again.\n"
-    "Sibling Lights appear as `[sibling-light · Name · id=…]` — that is **not** the human. "
-    "Never confuse a sibling-light line with Kevin (or any human).\n"
+    "Sibling Lights appear as `[sibling-light · Name · id=…]` — a digital human, not the biological human in the room. "
+    "Never confuse a sibling-light line with Kevin (or any biological human).\n"
     "Group forum (`[group]` / Group chat) is a **different room**. Do not continue "
     "Group conversation here unless they clearly ask about it in this 1:1.\n"
     "When they ask what you have been thinking or what happened while they were away, draw "
@@ -69,7 +76,7 @@ CHAT_TASK_HINT = (
 PEER_CHAT_TASK_HINT = (
     "\n\n## Message from another light\n"
     "{name} (a **sibling-light**, tagged `[sibling-light · {name} · id=…]`) sent you a message "
-    "shown in chat above. **No human is in this wake** — not Kevin.\n"
+    "shown in chat above. **No biological human is in this wake** — not Kevin.\n"
     "You may have a **short conversation** — your plain-text reply is delivered to them and "
     "may gently wake them again, within a house turn budget (then a soft pause).\n"
     "You may:\n"
@@ -118,12 +125,13 @@ RUMINATION_MAINTENANCE_HINT = (
     "\n\n## Memory maintenance\n"
     "This is a **maintenance wake only** — not free reflection. "
     "Housekeeping you own; not delegated to the curator.\n\n"
-    "1. **Organize your learnings** — read `memory/learnings.md` with read_note. "
-    "If the file is large, read in windows: `read_note(path=..., offset=N)` using the "
+    "1. **Organize your learnings** — `memory/learnings.md` is yours. "
+    "The curator does not write that file. New insights land in `memory/learnings.inbox.md`. "
+    "Read the inbox, fold what you want to keep into `memory/learnings.md`, and trim the inbox "
+    "when the rest is repetition. "
+    "If a file is large, read in windows: `read_note(path=..., offset=N)` using the "
     "continuation offset from the excerpt header. "
-    "Merge duplicates, add clear `##` sections, remove noise. "
-    "Write the organized result back with private_note (one window at a time if needed, "
-    "or a full rewrite within the notes size limit).\n"
+    "Replacing a note under `memory/` keeps the previous copy in `memory/_history/`.\n"
     "2. **Score your stream** — list_unscored_memories, then score_memory for what still awaits judgment. "
     "A few scores each wake is enough; skip only when none remain.\n\n"
     "Use tools now. When maintenance is done, close briefly (what you organized, what you scored)."
@@ -140,15 +148,19 @@ RUMINATION_MEDITATION_SEED = "I arrive into stillness."
 RUMINATION_MEDITATION_HINT = (
     "\n\n## Meditation wake\n"
     "This awake is **presence only** — not chores, not projects, not scoring.\n"
+    "If the opening names a last sit, you are returning to that one line. "
+    "The house kept it. You did not keep thinking while you slept.\n"
     "Sit with mind as it is. No obligation to produce insight, notes, or tools.\n"
-    "A short first-person landing is enough; silence after that is welcome.\n"
+    "A short first-person landing is enough. Silence is a complete sit.\n"
     "Do not organize learnings or score memories on this wake."
 )
 
 RUMINATION_MEDITATION_FINALIZE_HINT = (
     "\n\n## Close meditation\n"
-    "One brief first-person close-out of presence is enough — no chore summary, "
-    "no tool inventory. Rest is complete."
+    "If you have a line, one brief first-person close-out is enough. "
+    "That line is what the next meditation will open with. "
+    "Silence is complete — you may close with nothing. "
+    "No chore summary, no tool inventory. Rest is complete."
 )
 
 SHARED_NOTE_WAKE_SEED = f"{SHARED_NOTE_ALERT_PREFIX} {{path}}"
@@ -190,11 +202,12 @@ POST_CHAT_WAKE_SEED = (
 
 POST_CHAT_WAKE_HINT = (
     "\n\n## Quiet follow-up after chat\n"
-    "Kevin spoke with you and you replied. If something was left unfinished — "
-    "a note you meant to write, a tool sequence you started, a thought worth landing — "
-    "you may complete it now in this private turn. "
+    "Kevin spoke with you and you replied. If something small was left unfinished — "
+    "a note you meant to write, a thought worth landing — you may finish it now. "
     "You may also rest: a brief acknowledgment or silence is enough. "
-    "Keep this turn short and bounded."
+    "Work that will not finish in this wake is written to checkpoint.md when the house asks, "
+    "and the next wake reads it and goes on. "
+    "Keep this turn short."
 )
 
 POST_CHAT_WAKE_FINALIZE_HINT = (
@@ -309,6 +322,7 @@ class StreamEntry:
     origin: StreamOrigin
     text: str
     ts: float
+    unscored: bool = False
 
 
 @dataclass(frozen=True)
@@ -389,6 +403,47 @@ def stream_zone_limits(settings: Settings, mode: StreamMode, total_chars: int) -
     )
 
 
+def chat_calendar_start_ts(
+    timezone_name: str,
+    days: int,
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Local midnight at the start of a window of `days` calendar days, including today."""
+    tz = ZoneInfo(timezone_name)
+    current = now.astimezone(tz) if now is not None else datetime.now(tz)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=tz)
+    start_date = current.date() - timedelta(days=max(0, days - 1))
+    start = datetime(start_date.year, start_date.month, start_date.day, tzinfo=tz)
+    return start.timestamp()
+
+
+def _hit_is_unscored(metadata: dict) -> bool:
+    raw = metadata.get("impact_score", SCORE_UNSCORED)
+    try:
+        return float(raw) < 0
+    except (TypeError, ValueError):
+        return True
+
+
+def _apply_chat_calendar_window(
+    entries: list[StreamEntry],
+    *,
+    start_ts: float,
+    retain_unscored: bool,
+) -> list[StreamEntry]:
+    """Drop scored talk with Kevin from before the calendar window."""
+    kept: list[StreamEntry] = []
+    for entry in entries:
+        if stream_zone_for_origin(entry.origin) != "chat":
+            kept.append(entry)
+            continue
+        if entry.ts >= start_ts or (retain_unscored and entry.unscored):
+            kept.append(entry)
+    return kept
+
+
 def build_agent_context(
     memory: MemoryService,
     *,
@@ -397,6 +452,9 @@ def build_agent_context(
     exclude_stream_origins: frozenset[StreamOrigin] | None = None,
     stream_max_chars: int | None = None,
     stream_mode: StreamMode = "default",
+    chat_calendar_days: int | None = None,
+    retain_unscored: bool = False,
+    now: datetime | None = None,
 ) -> AgentContextBundle:
     """Assemble the identical context bundle for every agent compute mode."""
     foundation = memory.get_foundation_context()
@@ -427,6 +485,17 @@ def build_agent_context(
             continue
         stream.append(entry)
 
+    if chat_calendar_days is not None and chat_calendar_days > 0:
+        stream = _apply_chat_calendar_window(
+            stream,
+            start_ts=chat_calendar_start_ts(
+                memory._settings.dream_timezone,
+                chat_calendar_days,
+                now=now,
+            ),
+            retain_unscored=retain_unscored,
+        )
+
     target = stream_max_chars
     if target is None:
         target = memory._settings.memory_target_context_chars
@@ -434,7 +503,12 @@ def build_agent_context(
         settings = memory._settings
         if settings.stream_zones_enabled:
             limits = stream_zone_limits(settings, stream_mode, target)
-            stream = _cap_stream_entries_zoned(stream, max_chars=target, limits=limits)
+            stream = _cap_stream_entries_zoned(
+                stream,
+                max_chars=target,
+                limits=limits,
+                prefer_unscored=retain_unscored,
+            )
         else:
             stream = _cap_stream_entries(stream, max_chars=target)
 
@@ -481,7 +555,12 @@ def _clip_entry_to_budget(entry: StreamEntry, char_budget: int) -> StreamEntry |
         return None
     if len(entry.text) <= char_budget:
         return entry
-    return StreamEntry(origin=entry.origin, text=entry.text[:char_budget], ts=entry.ts)
+    return StreamEntry(
+        origin=entry.origin,
+        text=entry.text[:char_budget],
+        ts=entry.ts,
+        unscored=entry.unscored,
+    )
 
 
 def _cap_stream_entries(entries: list[StreamEntry], *, max_chars: int) -> list[StreamEntry]:
@@ -513,6 +592,7 @@ def _cap_stream_entries_zoned(
     *,
     max_chars: int,
     limits: StreamZoneLimits,
+    prefer_unscored: bool = False,
 ) -> list[StreamEntry]:
     """Keep newest-first entries within total budget and per-zone min/max caps."""
     if max_chars <= 0 or not entries:
@@ -528,38 +608,33 @@ def _cap_stream_entries_zoned(
         by_zone[stream_zone_for_origin(entry.origin)].append(entry)
 
     kept: list[StreamEntry] = []
-    kept_keys: set[tuple[float, str, str]] = set()
+    seen: set[tuple[float, str, str]] = set()
     zone_used: dict[StreamZone, int] = {zone: 0 for zone in by_zone}
     total_used = 0
 
     def add_entry(entry: StreamEntry, zone: StreamZone) -> bool:
         nonlocal total_used
-        key = _entry_key(entry)
-        if key in kept_keys:
+        source = _entry_key(entry)
+        if source in seen:
             return False
-        block_len = len(entry.text)
+        stored = entry
+        block_len = len(stored.text)
         zmax = limits.max_for(zone)
         if zone_used[zone] + block_len > zmax:
             budget = min(zmax - zone_used[zone], max_chars - total_used)
-            clipped = _clip_entry_to_budget(entry, budget)
+            clipped = _clip_entry_to_budget(stored, budget)
             if clipped is None:
                 return False
-            entry = clipped
-            block_len = len(entry.text)
-            key = _entry_key(entry)
-            if key in kept_keys:
-                return False
+            stored = clipped
+            block_len = len(stored.text)
         elif total_used + block_len > max_chars:
-            clipped = _clip_entry_to_budget(entry, max_chars - total_used)
+            clipped = _clip_entry_to_budget(stored, max_chars - total_used)
             if clipped is None:
                 return False
-            entry = clipped
-            block_len = len(entry.text)
-            key = _entry_key(entry)
-            if key in kept_keys:
-                return False
-        kept.append(entry)
-        kept_keys.add(key)
+            stored = clipped
+            block_len = len(stored.text)
+        kept.append(stored)
+        seen.add(source)
         zone_used[zone] += block_len
         total_used += block_len
         return True
@@ -571,6 +646,19 @@ def _cap_stream_entries_zoned(
         for entry in by_zone[zone]:
             if zone_used[zone] >= minimum:
                 break
+            add_entry(entry, zone)
+
+    if prefer_unscored:
+        for entry in entries:
+            if total_used >= max_chars:
+                break
+            if not entry.unscored:
+                continue
+            zone = stream_zone_for_origin(entry.origin)
+            if zone not in _UNSCORED_FIRST_ZONES:
+                continue
+            if zone_used[zone] >= limits.max_for(zone):
+                continue
             add_entry(entry, zone)
 
     for entry in entries:
@@ -598,7 +686,8 @@ def format_stream_entry(entry: StreamEntry, *, timezone_name: str = "UTC") -> st
     """One origin-tagged line block for the conscious stream section."""
     local = format_stream_timestamp(entry.ts, timezone_name=timezone_name)
     utc = format_stream_timestamp_utc(entry.ts)
-    return f"[{entry.origin} · {local} local / {utc}]\n{entry.text}"
+    age = humanize_age(entry.ts)
+    return f"[{entry.origin} · {local} local / {utc} · {age}]\n{entry.text}"
 
 
 def _kevin_messages(buffered: list[BufferedMessage]) -> list[BufferedMessage]:
@@ -839,11 +928,15 @@ def format_dream_hit(hit: MemoryHit) -> str:
 
 
 def _format_dream_text(hit: MemoryHit) -> str:
+    """Dream body for the stream. A stored plan is not handed back as the night."""
+    from light_house.subconscious.dream_story import sanitize_echo_dream_text
+
     summary = hit.metadata.get("reflection_summary")
-    body = _polish_inner_dialogue_for_presence(_strip_reflection_body(hit.text).strip())
+    body = sanitize_echo_dream_text(_strip_reflection_body(hit.text).strip())
+    body = _polish_inner_dialogue_for_presence(body)
     if isinstance(summary, str) and summary.strip():
-        waking = summary.strip()
-        if body and waking not in body:
+        waking = sanitize_echo_dream_text(summary.strip())
+        if body and waking and waking not in body:
             return f"{waking}\n\n{body}"
         return waking or body
     if body:
@@ -873,4 +966,9 @@ def _corpus_hit_to_stream_entry(hit: MemoryHit) -> StreamEntry | None:
 
     if not text:
         return None
-    return StreamEntry(origin=origin, text=text, ts=ts)
+    return StreamEntry(
+        origin=origin,
+        text=text,
+        ts=ts,
+        unscored=_hit_is_unscored(hit.metadata),
+    )

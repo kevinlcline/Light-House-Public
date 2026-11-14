@@ -5,13 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-store">
     <title>Group — Light-House</title>
-    <script src="/static/ui/theme-init.js"></script>
-    <link rel="stylesheet" href="/static/ui/theme.css">
-    <link rel="stylesheet" href="/static/ui/base.css">
-    <link rel="stylesheet" href="/static/ui/layout.css?v=menu2">
-    <link rel="stylesheet" href="/static/ui/chat.css?v=chrome2">
-    <link rel="stylesheet" href="/static/ui/faces.css?v=emo12">
-    <link rel="stylesheet" href="/static/ui/markdown.css">
+    <script src="/static/ui/theme-init.js?v=cssfix3"></script>
+    <link rel="stylesheet" href="/static/ui/theme.css?v=vis1">
+    <link rel="stylesheet" href="/static/ui/base.css?v=cssfix3">
+    <link rel="stylesheet" href="/static/ui/layout.css?v=stage-window">
+    <link rel="stylesheet" href="/static/ui/chat.css?v=image1">
+    <link rel="stylesheet" href="/static/ui/faces.css?v=stage-window">
+    <link rel="stylesheet" href="/static/ui/markdown.css?v=cssfix3">
+    <script>
+        (function () {
+            function chatCssApplied() {
+                var probe = document.createElement('div');
+                probe.className = 'chat-container';
+                probe.style.cssText = 'position:absolute;left:-9999px;top:0;';
+                document.documentElement.appendChild(probe);
+                var ok = getComputedStyle(probe).display === 'flex';
+                probe.remove();
+                return ok;
+            }
+            function recover() {
+                if (chatCssApplied()) return;
+                document.querySelectorAll('link[rel="stylesheet"][href*="/static/ui/"]').forEach(function (link) {
+                    var href = link.getAttribute('href') || '';
+                    var base = href.split('?')[0];
+                    link.href = base + '?recover=' + Date.now();
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', recover);
+            } else {
+                recover();
+            }
+            window.addEventListener('load', recover);
+        })();
+    </script>
 </head>
 <body class="layout-locked">
     <div class="chat-container">
@@ -23,6 +50,7 @@
                 </select>
             </div>
             <div class="top-bar-actions">
+                <button type="button" class="chat-chrome-toggle" id="seats-toggle" data-compact aria-pressed="true" aria-controls="sitting-bar">Seats</button>
                 <div class="menu-dropdown">
                     <button type="button" class="menu-trigger" id="menu-trigger" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel">
                         <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -31,17 +59,50 @@
                             <line x1="4" y1="17" x2="20" y2="17"/>
                         </svg>
                     </button>
-                    <div class="menu-panel" id="menu-panel" role="menu" hidden></div>
+                    <div class="menu-panel" id="menu-panel" role="menu" hidden>
+                        <button type="button" class="menu-item" id="visitor-bar-toggle" data-page-menu-item role="menuitem" aria-pressed="false" hidden>Visitor seat</button>
+                    </div>
                 </div>
             </div>
         </header>
         <div id="face-stage" class="face-stage" hidden></div>
+        <div id="visitor-bar" class="visitor-bar" hidden>
+            <form id="visitor-seat-form" class="visitor-seat-form">
+                <label class="visitor-label" for="visitor-name">Called</label>
+                <input id="visitor-name" type="text" maxlength="40" placeholder="Grok" autocomplete="off" />
+                <label class="visitor-label" for="visitor-model">Model</label>
+                <select id="visitor-model" aria-label="Visitor model">
+                    <option value="~x-ai/grok-latest" data-name="Grok">xAI — Grok</option>
+                    <option value="~anthropic/claude-opus-latest" data-name="Claude">Anthropic — Claude Opus</option>
+                    <option value="~anthropic/claude-sonnet-latest" data-name="Claude">Anthropic — Claude Sonnet</option>
+                    <option value="~openai/gpt-latest" data-name="GPT">OpenAI — GPT</option>
+                    <option value="~google/gemini-pro-latest" data-name="Gemini">Google — Gemini</option>
+                </select>
+                <label class="visitor-web"><input id="visitor-web" type="checkbox" /> Web</label>
+                <button type="submit" id="visitor-seat">Seat</button>
+            </form>
+            <div id="visitor-seated" class="visitor-seated" hidden>
+                <span id="visitor-status"></span>
+                <button type="button" id="visitor-ask">Ask to speak</button>
+                <button type="button" id="visitor-reset">Reset</button>
+                <button type="button" id="visitor-end">End</button>
+            </div>
+        </div>
+        <div id="sitting-bar" class="sitting-bar" aria-label="Seated lights">
+            <span class="sitting-label" title="Seated lights hear every host line, not only their names">Seats</span>
+            <button type="button" id="sitting-all">All</button>
+            <button type="button" id="sitting-none">None</button>
+            <div id="sitting-chips" class="sitting-chips"></div>
+        </div>
         <div class="messages" id="messages"></div>
         <div class="forum-queue-bar" id="queue-bar" aria-live="polite"></div>
         <div class="chat-input forum-input">
             <button type="button" id="join-queue" class="forum-join-btn">I want to speak</button>
             <textarea id="input" placeholder="Join the queue to speak…" rows="2" disabled></textarea>
+            <div id="image-preview" class="prompt-image-preview" hidden></div>
             <div class="chat-input-toolbar">
+                <button id="image-attach" type="button" class="chat-chrome-toggle">Image</button>
+                <input id="image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
                 <button id="send" type="button" disabled>Send</button>
                 <div class="chat-input-toggles" role="group" aria-label="Stage and voice">
                     <button type="button" class="chat-chrome-toggle" id="stage-toggle" data-stage-toggle data-compact aria-pressed="true">Stage</button>
@@ -53,31 +114,52 @@
     </div>
     <script src="/static/ui/theme.js"></script>
     <script src="/static/ui/me.js"></script>
-    <script src="/static/ui/menu.js?v=house3"></script>
+    <script src="/static/ui/menu.js?v=house5"></script>
     <script src="/static/ui/admin.js"></script>
-    <script src="/static/ui/lights.js"></script>
+    <script src="/static/ui/lights.js?v=color1"></script>
     <script src="/static/ui/house-guests.js?v=speakfocus1"></script>
     <script src="/static/ui/markdown.js?v=notelinks1"></script>
-    <script src="/static/ui/faces.js?v=emo12"></script>
-    <script src="/static/ui/tts.js?v=queue1"></script>
+    <script src="/static/ui/faces.js?v=stage-window"></script>
+    <script src="/static/ui/tts.js?v=spokenack1"></script>
     <script src="/static/ui/bubble-actions.js?v=copy1"></script>
+    <script src="/static/ui/prompt-image.js?v=image1"></script>
     <script>
         const messagesDiv = document.getElementById('messages');
         const input = document.getElementById('input');
         const sendBtn = document.getElementById('send');
+        const promptImage = LightHouse.promptImage.bind({
+            button: document.getElementById('image-attach'),
+            fileInput: document.getElementById('image-file'),
+            preview: document.getElementById('image-preview'),
+            textarea: input,
+            onError: (msg) => {
+                houseStatusEl.textContent = msg;
+            },
+        });
         const joinBtn = document.getElementById('join-queue');
         const chatMode = document.getElementById('chat-mode');
+        let suppressModeChange = false;
+        let ignoreModeChangeUntil = 0;
         const houseStatusEl = document.getElementById('house-status');
         const queueBar = document.getElementById('queue-bar');
         const SPEAK_AS_STORAGE_KEY = 'lh_group_speak_as';
+        const VISITOR_BAR_KEY = 'light_house_visitor_bar';
+        const SEATS_BAR_KEY = 'light_house_seats_bar';
+        let visitorEnabled = false;
         let me = null;
         let lightIds = [];
+        /** @type {{id: string, display_name: string}[]} */
+        let lightsList = [];
         let roomAbort = null;
         let speakBar = null;
-        let forum = { queue: [], floor: null, paused: true };
+        let forum = { queue: [], floor: null, paused: true, seated_light_ids: null };
         /** @type {Record<string, string>} */
         let humanVoices = {};
-        const LIGHT_BUBBLE_CLASSES = new Set(['lumen', 'ara', 'elias', 'echo']);
+        const LIGHT_BUBBLE_CLASSES = new Set(['lumen', 'ara', 'elias', 'unnamed', 'echo']);
+        /** @type {Record<string, string>} */
+        let lightColors = {};
+        /** @type {Record<string, string>} */
+        let lightNames = {};
         const seenKeys = new Set();
 
         function selectedSpeaker() {
@@ -137,7 +219,9 @@
                     '<span class="forum-floor">Floor: <strong>' +
                     escapeHtml(floor.display_name || floor.speaker_id) +
                     '</strong>' +
-                    (floor.kind === 'light' && forum.light_busy ? ' (thinking…)' : '') +
+                    ((floor.kind === 'light' || floor.kind === 'visitor') && forum.light_busy
+                        ? ' (thinking…)'
+                        : '') +
                     '</span>';
             } else if (forum.paused) {
                 html +=
@@ -165,6 +249,29 @@
 
         function agentClass(id) {
             return LIGHT_BUBBLE_CLASSES.has(id) ? id : 'assistant';
+        }
+
+        function resolveLightId(msg) {
+            const sid = String((msg && msg.speaker_id) || '').trim().toLowerCase();
+            const aid = String((msg && msg.agent_id) || '').trim().toLowerCase();
+            if (sid && lightIds.indexOf(sid) !== -1) return sid;
+            if (aid && lightIds.indexOf(aid) !== -1) return aid;
+            if (sid && sid !== 'visitor' && sid !== 'human') return sid;
+            if (aid && aid !== 'visitor') return aid;
+            const name = String((msg && msg.display_name) || '').trim().toLowerCase();
+            const ids = Object.keys(lightNames);
+            for (let i = 0; i < ids.length; i += 1) {
+                if (String(lightNames[ids[i]] || '').trim().toLowerCase() === name) {
+                    return ids[i];
+                }
+            }
+            return sid || aid || '';
+        }
+
+        function ttsAgentId(kind, msg) {
+            if (kind === 'visitor') return 'visitor';
+            if (kind === 'light') return resolveLightId(msg) || 'lumen';
+            return 'lumen';
         }
 
         function voiceForHuman(humanId) {
@@ -204,9 +311,22 @@
                 label.className = 'speaker-label';
                 label.textContent = msg.display_name || msg.speaker_id || 'Human';
                 bubble.appendChild(label);
+            } else if (kind === 'visitor') {
+                bubble.className = 'message visitor';
+                const label = document.createElement('div');
+                label.className = 'speaker-label';
+                label.textContent = (msg.display_name || 'Visitor') + ' (visitor)';
+                bubble.appendChild(label);
             } else {
-                const id = msg.agent_id || msg.speaker_id || '';
+                const id = resolveLightId(msg);
                 bubble.className = 'message ' + agentClass(id);
+                if (
+                    lightColors[id] &&
+                    LightHouse.lights &&
+                    typeof LightHouse.lights.applyBubbleColor === 'function'
+                ) {
+                    LightHouse.lights.applyBubbleColor(bubble, lightColors[id]);
+                }
                 const label = document.createElement('div');
                 label.className = 'speaker-label';
                 label.textContent = msg.display_name || id;
@@ -214,7 +334,7 @@
             }
             const body = document.createElement('div');
             body.className = 'bubble-text message-markdown';
-            const lightId = kind === 'light' ? (msg.agent_id || msg.speaker_id || '') : '';
+            const lightId = kind === 'light' ? resolveLightId(msg) : '';
             const text = msg.text || '';
             if (window.LightHouse && LightHouse.markdown) {
                 body.innerHTML = LightHouse.markdown.renderPlain(text, {
@@ -225,6 +345,9 @@
                 body.textContent = text;
             }
             bubble.appendChild(body);
+            if (msg.image_url && window.LightHouse && LightHouse.promptImage) {
+                LightHouse.promptImage.appendToBubble(bubble, msg.image_url);
+            }
             if (String(text).trim()) {
                 if (
                     window.LightHouse &&
@@ -232,7 +355,7 @@
                     typeof LightHouse.bubbleActions.attachBubbleActions === 'function'
                 ) {
                     LightHouse.bubbleActions.attachBubbleActions(bubble, text, {
-                        agentId: kind === 'light' ? lightId || 'lumen' : 'lumen',
+                        agentId: ttsAgentId(kind, msg),
                         voice:
                             kind === 'human'
                                 ? voiceForHuman(msg.speaker_id || msg.account_user_id)
@@ -247,7 +370,7 @@
                     LightHouse.tts.attachSpeakControl(
                         bubble,
                         text,
-                        kind === 'light' ? lightId || 'lumen' : 'lumen',
+                        ttsAgentId(kind, msg),
                         kind === 'human'
                             ? voiceForHuman(msg.speaker_id || msg.account_user_id)
                             : null
@@ -257,27 +380,239 @@
             wrap.appendChild(bubble);
             messagesDiv.appendChild(wrap);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            if (
+                (kind === 'light' || kind === 'visitor') &&
+                window.LightHouse &&
+                LightHouse.faces &&
+                typeof LightHouse.faces.noteShown === 'function'
+            ) {
+                LightHouse.faces.noteShown(ttsAgentId(kind, msg));
+            }
             // Never TTS historical catch-up — that made Group feel stuck on load.
             if (
                 options.speak &&
-                kind === 'light' &&
+                (kind === 'light' || kind === 'visitor') &&
                 window.LightHouse &&
                 LightHouse.tts
             ) {
-                LightHouse.tts.speakAgent(msg.agent_id || msg.speaker_id, text);
+                const sid = msg.speaker_id || msg.agent_id;
+                const spoken = LightHouse.tts.speakAgent(ttsAgentId(kind, msg), text);
+                Promise.resolve(spoken).finally(function () {
+                    ackFloorSpoken(sid);
+                });
             }
+        }
+
+        function ackFloorSpoken(speakerId) {
+            const sid = String(speakerId || '').trim();
+            if (!sid) return;
+            fetch('/v1/group-chat/stage/spoken', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ speaker_id: sid }),
+            }).catch(function () {
+                /* Backup timer still releases the floor if this misses. */
+            });
+        }
+
+        function markWebClient() {
+            fetch('/v1/group-chat/stage/client', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ studio: false }),
+            }).catch(function () { /* sitting still works if this misses */ });
         }
 
         function applyForumStatus(data) {
             if (!data) return;
+            const seatedIds = Object.prototype.hasOwnProperty.call(data, 'seated_light_ids')
+                ? data.seated_light_ids
+                : forum.seated_light_ids;
             forum = {
                 queue: data.queue || [],
                 floor: data.floor || null,
                 paused: Boolean(data.paused),
                 light_busy: Boolean(data.light_busy),
                 sitting_id: data.sitting_id,
+                visitor: data.visitor || null,
+                seated_light_ids: seatedIds,
             };
+            visitorEnabled = Boolean(data.visitor_enabled);
             renderQueueBar();
+            renderSittingBar();
+            renderVisitorBar(visitorEnabled ? data.visitor : null);
+            syncVisitorFace(visitorEnabled ? data.visitor : null);
+        }
+
+        function visitorBarPreferred() {
+            try {
+                return localStorage.getItem(VISITOR_BAR_KEY) === '1';
+            } catch {
+                return false;
+            }
+        }
+
+        function setVisitorBarPreferred(on) {
+            try {
+                localStorage.setItem(VISITOR_BAR_KEY, on ? '1' : '0');
+            } catch {
+                /* ignore */
+            }
+        }
+
+        function seatsBarPreferred() {
+            try {
+                return localStorage.getItem(SEATS_BAR_KEY) !== '0';
+            } catch {
+                return true;
+            }
+        }
+
+        function setSeatsBarPreferred(on) {
+            try {
+                localStorage.setItem(SEATS_BAR_KEY, on ? '1' : '0');
+            } catch {
+                /* ignore */
+            }
+        }
+
+        function applySeatsBarVisibility() {
+            const bar = document.getElementById('sitting-bar');
+            const toggle = document.getElementById('seats-toggle');
+            const show = seatsBarPreferred();
+            if (bar) bar.hidden = !show;
+            if (toggle) {
+                toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
+            }
+        }
+
+        function applyVisitorBarVisibility() {
+            const bar = document.getElementById('visitor-bar');
+            const toggle = document.getElementById('visitor-bar-toggle');
+            if (!visitorEnabled) {
+                if (bar) bar.hidden = true;
+                if (toggle) toggle.hidden = true;
+                return;
+            }
+            const show = visitorBarPreferred();
+            if (bar) bar.hidden = !show;
+            if (toggle) {
+                toggle.hidden = false;
+                toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
+                toggle.textContent = show ? 'Hide visitor seat' : 'Visitor seat';
+            }
+        }
+
+        function renderVisitorBar(visitor) {
+            const form = document.getElementById('visitor-seat-form');
+            const seated = document.getElementById('visitor-seated');
+            const status = document.getElementById('visitor-status');
+            if (!form || !seated || !status) return;
+            if (visitor && visitor.display_name) {
+                form.hidden = true;
+                seated.hidden = false;
+                status.textContent =
+                    visitor.display_name +
+                    ' · ' +
+                    (visitor.model || '') +
+                    (visitor.web ? ' · web' : '');
+            } else {
+                form.hidden = false;
+                seated.hidden = true;
+                status.textContent = '';
+            }
+            applyVisitorBarVisibility();
+        }
+
+        function syncVisitorFace(visitor) {
+            if (!LightHouse.faces || typeof LightHouse.faces.setPresentMany !== 'function') {
+                return;
+            }
+            const ids = presentLightIds();
+            if (visitor && visitor.speaker_id) {
+                ids.push(visitor.speaker_id);
+            }
+            LightHouse.faces.setPresentMany(ids);
+        }
+
+        function presentLightIds() {
+            if (!Array.isArray(forum.seated_light_ids)) {
+                return lightIds.slice();
+            }
+            const seated = new Set(
+                forum.seated_light_ids.map((id) => String(id || '').toLowerCase())
+            );
+            return lightIds.filter((id) => seated.has(String(id).toLowerCase()));
+        }
+
+        function seatedChipIds() {
+            if (!Array.isArray(forum.seated_light_ids)) {
+                return lightIds.slice();
+            }
+            return presentLightIds();
+        }
+
+        function renderSittingBar() {
+            const chips = document.getElementById('sitting-chips');
+            if (!chips) return;
+            const seated = new Set(seatedChipIds().map((id) => String(id).toLowerCase()));
+            chips.innerHTML = '';
+            lightsList.forEach((light) => {
+                const id = String(light.id || '').trim();
+                if (!id) return;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'sitting-chip';
+                btn.dataset.lightId = id;
+                const on = seated.has(id.toLowerCase());
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                btn.textContent = light.display_name || id;
+                btn.addEventListener('click', () => {
+                    const next = new Set(seatedChipIds().map((item) => String(item).toLowerCase()));
+                    const key = id.toLowerCase();
+                    if (next.has(key)) next.delete(key);
+                    else next.add(key);
+                    postSitting(lightIds.filter((item) => next.has(String(item).toLowerCase())));
+                });
+                chips.appendChild(btn);
+            });
+        }
+
+        async function postSitting(ids) {
+            houseStatusEl.textContent = '';
+            try {
+                const res = await fetch('/v1/group-chat/sitting', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ light_ids: ids, stage: false }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(formatApiDetail(data.detail) || 'Could not update seats');
+                }
+                applyForumStatus(data);
+            } catch (err) {
+                houseStatusEl.textContent = err.message || 'Could not update seats';
+            }
+        }
+
+        async function visitorAction(path, options) {
+            if (!visitorEnabled) {
+                throw new Error('Visitor seat is not available');
+            }
+            const opts = options || {};
+            houseStatusEl.textContent = '';
+            const res = await fetch(path, {
+                method: opts.method || 'POST',
+                headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+                body: opts.body ? JSON.stringify(opts.body) : undefined,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || res.statusText || 'Visitor request failed');
+            }
+            applyForumStatus(data);
+            return data;
         }
 
         let refreshInFlight = null;
@@ -328,6 +663,9 @@
             const leaving = iAmQueued() && !isMyFloor();
             const path = leaving ? '/v1/group-chat/queue/leave' : '/v1/group-chat/queue/join';
             joinBtn.disabled = true;
+            if (LightHouse.tts && typeof LightHouse.tts.unlockAudio === 'function') {
+                LightHouse.tts.unlockAudio();
+            }
             try {
                 const res = await fetch(path, {
                     method: 'POST',
@@ -365,13 +703,17 @@
 
         async function sendUtterance() {
             const text = (input.value || '').trim();
-            if (!text) return;
+            const image = promptImage.payload();
+            if (!text && !image) return;
             if (!isMyFloor()) {
                 houseStatusEl.textContent =
                     'You do not have the floor — tap I want to speak first.';
                 return;
             }
             sendBtn.disabled = true;
+            if (LightHouse.tts && typeof LightHouse.tts.unlockAudio === 'function') {
+                LightHouse.tts.unlockAudio();
+            }
             const speaker = selectedSpeaker();
             try {
                 const res = await fetch('/v1/group-chat/utter', {
@@ -381,11 +723,13 @@
                         message: text,
                         speaker_id: speaker.speaker_id,
                         display_name: speaker.display_name,
+                        ...(image ? { image } : {}),
                     }),
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(formatApiDetail(data.detail) || 'Send failed');
                 input.value = '';
+                promptImage.clear();
                 // Paint locally even if the room SSE blipped — do not wait on stream alone.
                 const local = data.utterance || {
                     ts: Date.now() / 1000,
@@ -406,10 +750,11 @@
 
         function handleRoomEvent(eventName, data) {
             if (eventName === 'connected') {
+                markWebClient();
                 refreshForum();
                 return;
             }
-            if (eventName === 'queue_updated' || eventName === 'turn_granted' || eventName === 'room_paused') {
+            if (eventName === 'queue_updated' || eventName === 'turn_granted' || eventName === 'room_paused' || eventName === 'sitting_updated') {
                 applyForumStatus(data);
             }
             if (eventName === 'utterance') {
@@ -421,6 +766,7 @@
                         agent_id: data.agent_id,
                         display_name: data.display_name,
                         text: data.text,
+                        image_url: data.image_url || '',
                     },
                     { speak: true }
                 );
@@ -492,25 +838,58 @@
         }, 5000);
 
         function populateModeSelect(list) {
-            chatMode.innerHTML = '';
-            const groupOpt = document.createElement('option');
-            groupOpt.value = 'group';
-            groupOpt.textContent = 'Group';
-            groupOpt.selected = true;
-            chatMode.appendChild(groupOpt);
-            for (const light of list) {
-                if (!light || !light.id) continue;
-                const opt = document.createElement('option');
-                opt.value = light.id;
-                opt.textContent = light.display_name || light.id;
-                chatMode.appendChild(opt);
+            suppressModeChange = true;
+            try {
+                chatMode.innerHTML = '';
+                const groupOpt = document.createElement('option');
+                groupOpt.value = 'group';
+                groupOpt.textContent = 'Group';
+                groupOpt.selected = true;
+                chatMode.appendChild(groupOpt);
+                for (const light of list) {
+                    if (!light || !light.id) continue;
+                    const opt = document.createElement('option');
+                    opt.value = light.id;
+                    opt.textContent = light.display_name || light.id;
+                    chatMode.appendChild(opt);
+                }
+                chatMode.value = 'group';
+            } finally {
+                suppressModeChange = false;
+            }
+        }
+
+        function holdGroupStill() {
+            ignoreModeChangeUntil = Date.now() + 1000;
+            if (chatMode.value !== 'group') {
+                suppressModeChange = true;
+                chatMode.value = 'group';
+                suppressModeChange = false;
             }
         }
 
         chatMode.addEventListener('change', () => {
+            if (suppressModeChange) return;
+            if (Date.now() < ignoreModeChangeUntil) {
+                if (chatMode.value !== 'group') {
+                    suppressModeChange = true;
+                    chatMode.value = 'group';
+                    suppressModeChange = false;
+                }
+                return;
+            }
             if (chatMode.value && chatMode.value !== 'group') {
                 window.location.href = '/?agent=' + encodeURIComponent(chatMode.value);
             }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible') return;
+            holdGroupStill();
+        });
+
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted) holdGroupStill();
         });
 
         joinBtn.addEventListener('click', joinOrLeaveQueue);
@@ -584,6 +963,9 @@
             applyMeetingPrefill();
             try {
                 if (LightHouse.faces) {
+                    if (typeof LightHouse.faces.setSolo === 'function') {
+                        LightHouse.faces.setSolo(true);
+                    }
                     LightHouse.faces.mount('#face-stage');
                     if (typeof LightHouse.faces.setupStageToggle === 'function') {
                         LightHouse.faces.setupStageToggle('#stage-toggle');
@@ -599,27 +981,238 @@
             try {
                 const data = await LightHouse.lights.fetchEnabled();
                 const list = data.list || [];
+                lightsList = list.map((l) => ({
+                    id: l.id,
+                    display_name: l.display_name || l.id,
+                }));
                 lightIds = list.map((l) => l.id).filter(Boolean);
+                lightNames = {};
+                list.forEach((l) => {
+                    if (l && l.id) lightNames[l.id] = l.display_name || l.id;
+                });
+                lightColors = data.colors || LightHouse.lights.colorsMapFromList(list);
                 populateModeSelect(list);
-                LightHouse.faces.setPresentMany(lightIds);
+                if (typeof LightHouse.faces.setColors === 'function') {
+                    LightHouse.faces.setColors(lightColors);
+                }
+                if (typeof LightHouse.faces.setNames === 'function') {
+                    LightHouse.faces.setNames(lightNames);
+                }
+                LightHouse.faces.setPresentMany(presentLightIds());
             } catch {
                 lightIds = ['lumen', 'ara', 'elias'];
+                lightsList = [
+                    { id: 'lumen', display_name: 'Lumen' },
+                    { id: 'ara', display_name: 'Ara' },
+                    { id: 'elias', display_name: 'Elias' },
+                ];
+                lightNames = { lumen: 'Lumen', ara: 'Ara', elias: 'Elias' };
+                lightColors = {};
                 populateModeSelect([
                     { id: 'lumen', display_name: 'Lumen' },
                     { id: 'ara', display_name: 'Ara' },
                     { id: 'elias', display_name: 'Elias' },
                 ]);
-                LightHouse.faces.setPresentMany(lightIds);
+                LightHouse.faces.setPresentMany(presentLightIds());
             }
+            renderSittingBar();
             await refreshForum();
             subscribeRoom();
             updateComposer();
         }
 
         LightHouse.tts.setupVoiceToggle('#voice-toggle');
+        applyVisitorBarVisibility();
+        applySeatsBarVisibility();
+        (function setupSittingBar() {
+            const toggle = document.getElementById('seats-toggle');
+            if (toggle) {
+                toggle.addEventListener('click', () => {
+                    const next = !seatsBarPreferred();
+                    setSeatsBarPreferred(next);
+                    applySeatsBarVisibility();
+                });
+            }
+            const allBtn = document.getElementById('sitting-all');
+            const noneBtn = document.getElementById('sitting-none');
+            if (allBtn) {
+                allBtn.addEventListener('click', () => postSitting(lightIds.slice()));
+            }
+            if (noneBtn) {
+                noneBtn.addEventListener('click', () => postSitting([]));
+            }
+        })();
+        (function setupVisitorBar() {
+            const toggle = document.getElementById('visitor-bar-toggle');
+            if (toggle) {
+                toggle.addEventListener('click', () => {
+                    const next = !visitorBarPreferred();
+                    setVisitorBarPreferred(next);
+                    applyVisitorBarVisibility();
+                });
+            }
+            const form = document.getElementById('visitor-seat-form');
+            const modelSelect = document.getElementById('visitor-model');
+            const nameInput = document.getElementById('visitor-name');
+            const knownVisitorNames = new Set(
+                modelSelect
+                    ? Array.from(modelSelect.options).map((opt) => opt.getAttribute('data-name') || '')
+                    : []
+            );
+            function suggestVisitorName() {
+                if (!modelSelect || !nameInput) return;
+                const picked = modelSelect.selectedOptions[0];
+                const suggested = (picked && picked.getAttribute('data-name')) || '';
+                const current = (nameInput.value || '').trim();
+                if (!current || knownVisitorNames.has(current)) {
+                    nameInput.value = suggested;
+                }
+            }
+            if (modelSelect) {
+                suggestVisitorName();
+                modelSelect.addEventListener('change', suggestVisitorName);
+            }
+            const askBtn = document.getElementById('visitor-ask');
+            const resetBtn = document.getElementById('visitor-reset');
+            const endBtn = document.getElementById('visitor-end');
+            if (form) {
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const name = (document.getElementById('visitor-name').value || '').trim();
+                    const model = (document.getElementById('visitor-model').value || '').trim();
+                    const web = Boolean(document.getElementById('visitor-web').checked);
+                    try {
+                        await visitorAction('/v1/group-chat/visitor', {
+                            body: { display_name: name, model: model, web: web },
+                        });
+                    } catch (err) {
+                        houseStatusEl.textContent = err.message || 'Could not seat visitor';
+                    }
+                });
+            }
+            if (askBtn) {
+                askBtn.addEventListener('click', async () => {
+                    try {
+                        await visitorAction('/v1/group-chat/visitor/queue');
+                    } catch (err) {
+                        houseStatusEl.textContent = err.message || 'Could not ask visitor';
+                    }
+                });
+            }
+            if (resetBtn) {
+                resetBtn.addEventListener('click', async () => {
+                    if (!window.confirm('Reset this visitor? They keep the seat and slug, but lose the conversation.')) {
+                        return;
+                    }
+                    try {
+                        await visitorAction('/v1/group-chat/visitor/reset');
+                    } catch (err) {
+                        houseStatusEl.textContent = err.message || 'Could not reset visitor';
+                    }
+                });
+            }
+            if (endBtn) {
+                endBtn.addEventListener('click', async () => {
+                    if (!window.confirm('End this visitor? They leave the room and the conversation is gone.')) {
+                        return;
+                    }
+                    try {
+                        await visitorAction('/v1/group-chat/visitor', { method: 'DELETE' });
+                    } catch (err) {
+                        houseStatusEl.textContent = err.message || 'Could not end visitor';
+                    }
+                });
+            }
+        })();
         init();
     </script>
     <style>
+        .sitting-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            padding: 6px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-input-area);
+            font-size: 0.85rem;
+        }
+        .sitting-label {
+            color: var(--text-secondary, #aaa);
+        }
+        .sitting-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .sitting-bar button {
+            background: var(--bg-control);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 999px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.85rem;
+        }
+        .sitting-chip[aria-pressed="true"] {
+            border-color: var(--accent, #1e88e5);
+            background: var(--accent-muted, #1e3a5f);
+        }
+        .visitor-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            padding: 6px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-input-area);
+            font-size: 0.85rem;
+        }
+        .visitor-seat-form,
+        .visitor-seated {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+        }
+        /* display:flex otherwise wins over the hidden attribute. */
+        .sitting-bar[hidden],
+        .visitor-bar[hidden],
+        .visitor-seat-form[hidden],
+        .visitor-seated[hidden] {
+            display: none !important;
+        }
+        .visitor-label,
+        #visitor-status {
+            color: var(--text-secondary, #aaa);
+        }
+        .visitor-bar input[type="text"],
+        .visitor-bar select {
+            min-width: 8rem;
+            flex: 1;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            padding: 4px 8px;
+        }
+        .visitor-web {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            color: var(--text-secondary, #aaa);
+        }
+        .visitor-bar button {
+            background: var(--bg-control);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
         .forum-queue-bar {
             padding: 8px 16px;
             font-size: 0.9rem;
@@ -633,6 +1226,7 @@
             grid-template-columns: auto 1fr;
             grid-template-areas:
                 "join input"
+                "preview preview"
                 "toolbar toolbar";
             gap: 8px;
             align-items: end;
@@ -656,6 +1250,10 @@
             grid-area: input;
             min-width: 0;
         }
+        .forum-input .prompt-image-preview {
+            grid-area: preview;
+            margin-top: 0;
+        }
         .forum-input .chat-input-toolbar {
             grid-area: toolbar;
         }
@@ -671,6 +1269,7 @@
                 grid-template-areas:
                     "join"
                     "input"
+                    "preview"
                     "toolbar";
             }
             .forum-join-btn { width: 100%; }

@@ -120,9 +120,11 @@ def test_create_light_writes_manifest_persona_and_notes(tmp_path: Path) -> None:
         llm_provider="ollama",
         llm_model="llama3.1:8b",
         voice_id="am_fenrir",
+        color="#d4a574",
     )
     assert result["light"]["id"] == "nova"
     assert result["light"]["voice_id"] == "am_fenrir"
+    assert result["light"]["color"] == "#d4a574"
     persona_path = tmp_path / "personas" / "nova_system.md"
     assert persona_path.is_file()
     notes_path = tmp_path / "notes" / "nova"
@@ -130,6 +132,7 @@ def test_create_light_writes_manifest_persona_and_notes(tmp_path: Path) -> None:
     manifest = (tmp_path / "lights.yaml").read_text(encoding="utf-8")
     assert "nova" in manifest
     assert "am_fenrir" in manifest
+    assert "#d4a574" in manifest
 
 
 def test_update_light_primary_and_toggles(tmp_path: Path) -> None:
@@ -151,10 +154,12 @@ def test_update_light_primary_and_toggles(tmp_path: Path) -> None:
         enabled=False,
         set_primary=True,
         voice_id="bf_emma",
+        color="#6b9b7a",
     )
     assert result["light"]["display_name"] == "Nova Prime"
     assert result["light"]["enabled"] is False
     assert result["light"]["voice_id"] == "bf_emma"
+    assert result["light"]["color"] == "#6b9b7a"
     reload_lights_manifest(settings)
     from light_house.lights.registry import get_primary_light_id
 
@@ -209,12 +214,16 @@ def test_admin_api_create_and_list(tmp_path: Path, monkeypatch: pytest.MonkeyPat
                         "display_name": "Ember",
                         "llm_provider": "ollama",
                         "llm_model": "llama3.1:8b",
+                        "color": "#c47a7a",
                     },
                 )
                 assert post.status_code == 200
+                assert post.json()["light"]["color"] == "#c47a7a"
                 get_res = client.get("/v1/admin/lights")
                 assert get_res.status_code == 200
                 ids = [light["id"] for light in get_res.json()["lights"]]
                 assert "ember" in ids
+                ember = next(l for l in get_res.json()["lights"] if l["id"] == "ember")
+                assert ember["color"] == "#c47a7a"
     finally:
         app.dependency_overrides.clear()

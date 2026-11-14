@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from light_house.config import Settings
 from light_house.memory.context_builder import (
     AgentContextBundle,
     StreamEntry,
+    StreamZoneLimits,
     _cap_stream_entries_zoned,
     build_agent_context,
     format_agent_context_markdown,
@@ -16,15 +20,21 @@ from light_house.memory.context_builder import (
     stream_zone_limits,
 )
 from light_house.memory.models import MemoryHit
+from light_house.personal.age import humanize_age
 from light_house.memory.service import MemoryService
 from light_house.memory.short_term import BufferedMessage
 
 
 def test_format_stream_entry_includes_origin_tag():
-    entry = StreamEntry(origin="rumination", text="I rested in quiet.", ts=1_700_000_000.0)
+    ts = 1_700_000_000.0
+    entry = StreamEntry(origin="rumination", text="I rested in quiet.", ts=ts)
     formatted = format_stream_entry(entry, timezone_name="UTC")
-    assert formatted.startswith("[rumination ·")
-    assert "I rested in quiet." in formatted
+    header, body = formatted.split("\n", 1)
+    assert header.startswith("[rumination ·")
+    assert " local / " in header
+    assert " UTC · " in header
+    assert header.endswith(f" · {humanize_age(ts)}]")
+    assert body == "I rested in quiet."
 
 
 def test_format_agent_context_stream_is_chronological():
@@ -360,3 +370,128 @@ def test_build_agent_context_with_zones_disabled_uses_legacy_cap(monkeypatch):
     )
     assert bundle.stream_char_count <= 30
     assert bundle.conscious_stream[0].origin == "rumination"
+
+
+def _quiet_window_service(monkeypatch, hits: list[MemoryHit]) -> MemoryService:
+    monkeypatch.setenv("MEMORY_INDEX_ENABLED", "false")
+    settings = Settings(
+        memory_store_path="/tmp/unused-memory",
+        personal_db_enabled=False,
+        memory_index_enabled=False,
+        dream_timezone="America/Los_Angeles",
+    )
+
+    class FakeLongTerm:
+        def list_pinned_facts(self, *, thread_id, limit):
+            return []
+
+        def list_thread_corpus(self, *, thread_id):
+            return hits
+
+    service = MemoryService(settings)
+    monkeypatch.setattr(service, "_long_term", FakeLongTerm())
+    monkeypatch.setattr(service, "get_foundation_context", lambda: "")
+    return service
+
+
+def _window_hits() -> tuple[datetime, list[MemoryHit]]:
+    tz = ZoneInfo("America/Los_Angeles")
+    now = datetime(2026, 11, 8, 15, 0, tzinfo=tz)
+    return now, [
+        MemoryHit(
+            text="today",
+            score=0.0,
+            metadata={"stream_source": "chat", "ts": datetime(2026, 11, 8, 9, tzinfo=tz).timestamp(), "impact_score": 6},
+        ),
+        MemoryHit(
+            text="yesterday",
+            score=0.0,
+            metadata={"stream_source": "chat", "ts": datetime(2026, 11, 7, 9, tzinfo=tz).timestamp(), "impact_score": -1},
+        ),
+        MemoryHit(
+            text="older-scored",
+            score=0.0,
+            metadata={"stream_source": "chat", "ts": datetime(2026, 11, 6, 23, tzinfo=tz).timestamp(), "impact_score": 4},
+        ),
+        MemoryHit(
+            text="older-unscored",
+            score=0.0,
+            metadata={"stream_source": "chat", "ts": datetime(2026, 11, 1, 12, tzinfo=tz).timestamp(), "impact_score": -1},
+        ),
+        MemoryHit(
+            text="old thought",
+            score=0.0,
+            metadata={"stream_source": "thought", "ts": datetime(2026, 10, 1, 12, tzinfo=tz).timestamp(), "impact_score": 7},
+        ),
+    ]
+
+
+def test_quiet_wake_keeps_two_calendar_days_of_chat(monkeypatch):
+    now, hits = _window_hits()
+    service = _quiet_window_service(monkeypatch, hits)
+    bundle = build_agent_context(
+        service,
+        thread_id="kevin-home",
+        agent_id="lumen",
+        stream_mode="rumination",
+        chat_calendar_days=2,
+        now=now,
+    )
+    texts = {entry.text for entry in bundle.conscious_stream}
+    assert texts == {"today", "yesterday", "old thought"}
+
+
+def test_maintenance_keeps_unscored_chat_outside_the_window(monkeypatch):
+    now, hits = _window_hits()
+    service = _quiet_window_service(monkeypatch, hits)
+    bundle = build_agent_context(
+        service,
+        thread_id="kevin-home",
+        agent_id="lumen",
+        stream_mode="rumination",
+        chat_calendar_days=2,
+        retain_unscored=True,
+        now=now,
+    )
+    texts = {entry.text for entry in bundle.conscious_stream}
+    assert "older-unscored" in texts
+    assert "older-scored" not in texts
+    assert "today" in texts
+    assert "old thought" in texts
+
+
+def test_chat_mode_does_not_apply_the_quiet_window(monkeypatch):
+    now, hits = _window_hits()
+    service = _quiet_window_service(monkeypatch, hits)
+    bundle = build_agent_context(
+        service,
+        thread_id="kevin-home",
+        agent_id="lumen",
+        stream_mode="chat",
+        now=now,
+    )
+    texts = {entry.text for entry in bundle.conscious_stream}
+    assert "older-scored" in texts
+    assert "older-unscored" in texts
+
+
+def test_prefer_unscored_claims_the_chat_zone_first():
+    limits = StreamZoneLimits(
+        chat_max=3,
+        chat_min=0,
+        rumination_max=0,
+        rumination_min=0,
+        dream_max=0,
+        other_max=0,
+    )
+    entries = [
+        StreamEntry(origin="chat", text="new", ts=3.0, unscored=False),
+        StreamEntry(origin="chat", text="old", ts=1.0, unscored=True),
+    ]
+    capped = _cap_stream_entries_zoned(
+        entries,
+        max_chars=3,
+        limits=limits,
+        prefer_unscored=True,
+    )
+    assert [entry.text for entry in capped] == ["old"]

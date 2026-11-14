@@ -159,6 +159,29 @@ def test_private_note_archives_writing_draft_on_replace():
             assert "version one" in history_files[0].read_text(encoding="utf-8")
 
 
+def test_private_note_archives_memory_note_on_replace():
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = _settings(Path(tmp))
+        with patch("light_house.tools.light_tools.get_settings", return_value=settings):
+            r1 = execute_tool_call(
+                "private_note",
+                {"filename": "memory/learnings.md", "content": "morning one"},
+                agent_id="lumen",
+            )
+            assert r1.startswith("SUCCESS:")
+            r2 = execute_tool_call(
+                "private_note",
+                {"filename": "memory/learnings.md", "content": "morning two"},
+                agent_id="lumen",
+            )
+            assert "archived to memory/_history/" in r2
+            live = Path(tmp) / "notes" / "lumen" / "memory" / "learnings.md"
+            assert live.read_text(encoding="utf-8") == "morning two"
+            history = list((Path(tmp) / "notes" / "lumen" / "memory" / "_history").glob("learnings-*.md"))
+            assert len(history) == 1
+            assert "morning one" in history[0].read_text(encoding="utf-8")
+
+
 def test_private_note_normalizes_absolute_and_notes_prefix_paths():
     with tempfile.TemporaryDirectory() as tmp:
         settings = _settings(Path(tmp))

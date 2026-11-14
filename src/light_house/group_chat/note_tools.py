@@ -1,4 +1,4 @@
-"""Bounded note-tool access for group chat turns."""
+"""Tool rounds for group chat turns — same house tools as private 1:1."""
 
 from __future__ import annotations
 
@@ -11,21 +11,22 @@ from light_house.agent.tool_helpers import (
     ai_message_text,
     invoke_resilient_plain,
     last_message_has_tool_calls,
+    normalize_model_message,
     run_tool_calls,
 )
 from light_house.config import Settings
-from light_house.tools.light_tools import GROUP_CHAT_NOTE_TOOLS
+from light_house.tools.light_tools import LIGHT_TOOLS
 
 logger = logging.getLogger(__name__)
 
 _FINALIZE_HINT = (
-    "Note tools are done for this beat (or unused). "
+    "Tools are done for this beat (or unused). "
     "Reply now with **only** the JSON action object — no tools, no prose outside JSON."
 )
 
 
 def bind_group_note_tools(client: BaseChatModel) -> BaseChatModel:
-    return client.bind_tools(GROUP_CHAT_NOTE_TOOLS)
+    return client.bind_tools(LIGHT_TOOLS)
 
 
 def invoke_with_group_note_tools(
@@ -38,7 +39,7 @@ def invoke_with_group_note_tools(
             response = bind_group_note_tools(client).invoke(messages)
             if not isinstance(response, AIMessage):
                 raise TypeError("Model did not return an AIMessage")
-            return response
+            return normalize_model_message(response, recover_tools=True)
         except Exception as exc:
             last_exc = exc
             logger.exception("Group note-tools LLM tier %s failed", tier_name)
@@ -55,9 +56,11 @@ def run_group_note_tool_rounds(
     llm_chain: list[tuple[str, BaseChatModel]],
     messages: list[BaseMessage],
     agent_id: str,
+    account_user_id: str | None = None,
+    speaker_id: str | None = None,
 ) -> str:
     """
-    Allow a few note-tool rounds, then return the final plain-text decision body.
+    Allow a few tool rounds, then return the final plain-text decision body.
 
     ``messages`` is mutated in place (tool call + ToolMessage history).
     """
@@ -80,11 +83,13 @@ def run_group_note_tool_rounds(
         tool_messages = run_tool_calls(
             response,
             agent_id=agent_id,
+            account_user_id=account_user_id,
+            speaker_id=speaker_id,
             chat_channel="group",
         )
         messages.extend(tool_messages)
         logger.info(
-            "Group chat note tools agent=%s round=%d/%d calls=%d",
+            "Group chat tools agent=%s round=%d/%d calls=%d",
             agent_id,
             round_i + 1,
             max_rounds,
